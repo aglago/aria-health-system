@@ -1,0 +1,7 @@
+#!/Users/work.smaglago/Documents/FYP/aria-health-system/services/ai-service/aria-env/bin/python
+import sys
+from dotenv.__main__ import cli
+if __name__ == '__main__':
+    if sys.argv[0].endswith('.exe'):
+        sys.argv[0] = sys.argv[0][:-4]
+    sys.exit(cli())
