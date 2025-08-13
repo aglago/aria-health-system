@@ -1,5 +1,5 @@
 # ARIA AI Health Assistant - Main FastAPI Application
-# This is the core AI service that analyzes symptoms and provides health guidance
+# Phase 2: Core AI + Conversational Doctor AI
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Import our models and services
 from src.models.ml_medical_ai import ml_medical_ai, MLDiagnosis
+from src.models.intelligent_doctor import intelligent_doctor, DoctorResponse
 from src.services.rag_service import rag_service
 
 # Data models for API requests and responses
@@ -36,6 +37,16 @@ class AdvancedAnalysisRequest(BaseModel):
     medical_context: Optional[Dict] = None
     conversation_history: Optional[List[Dict]] = None
     language: str = "en"
+
+class DoctorStartRequest(BaseModel):
+    """Request model for starting doctor conversation"""
+    user_id: str
+    message: str
+
+class DoctorContinueRequest(BaseModel):
+    """Request model for continuing doctor conversation"""
+    session_id: str
+    message: str
 
 class HealthResponse(BaseModel):
     """Response model for health guidance"""
@@ -67,16 +78,28 @@ class AdvancedHealthResponse(BaseModel):
     conversation_id: str
     timestamp: str
 
+class DoctorResponseModel(BaseModel):
+    """Response model for doctor conversations"""
+    session_id: str
+    doctor_response: str
+    follow_up_questions: List[str]
+    urgency_level: str
+    requires_immediate_care: bool
+    confidence: float
+    medical_reasoning: str
+    timestamp: str
+
 # Create FastAPI application
 app = FastAPI(
     title="ARIA AI Health Assistant",
-    description="AI-powered health guidance for UMaT students during off-hours",
+    description="AI-powered health guidance with conversational doctor AI for UMaT students",
     version="2.0.0"
 )
 
-logger.info("🧠 ARIA AI Service initialized with:")
+logger.info("🧠 ARIA AI Service Phase 2 initialized with:")
 logger.info(f"   📊 ML Model Info: {ml_medical_ai.get_model_info()}")
-logger.info("   ✅ Phase 1: Core functionality with clean architecture!")
+logger.info(f"   🩺 Intelligent Doctor: Ready")
+logger.info("   ✅ Phase 2: Core ML + Conversational AI!")
 
 # Basic health check endpoints
 @app.get("/")
@@ -86,6 +109,7 @@ async def root():
         "message": "ARIA AI Health Assistant is running",
         "version": "2.0.0",
         "status": "healthy",
+        "features": ["ML Analysis", "Conversational Doctor AI", "RAG Knowledge"],
         "timestamp": datetime.now().isoformat()
     }
 
@@ -100,8 +124,9 @@ async def health_check():
         "dependencies": {
             "fastapi": "✓ Running",
             "ml_medical_ai": "✓ Ready",
+            "intelligent_doctor": "✓ Ready", 
             "rag_service": "✓ Ready",
-            "phase1_features": "✓ Enabled"
+            "phase2_features": "✅ ML Analysis + Conversational AI"
         }
     }
 
@@ -123,8 +148,9 @@ async def analyze_symptoms_advanced(request: AdvancedAnalysisRequest):
             medical_context=request.medical_context
         )
         
-        # Generate conversation ID
-        conversation_id = f"{request.user_id}_{int(datetime.now().timestamp())}"
+        # Generate conversation ID using UUID for consistency
+        import uuid
+        conversation_id = f"{request.user_id}_analysis_{str(uuid.uuid4())}"
         
         # Convert to response format
         response = AdvancedHealthResponse(
@@ -200,7 +226,175 @@ async def analyze_symptoms_direct_ml(request: Dict):
         logger.error(f"❌ Error in direct ML analysis: {e}")
         raise HTTPException(status_code=500, detail=f"ML analysis error: {str(e)}")
 
-# RAG Search Endpoint
+# =============================================================================
+# PHASE 2: INTELLIGENT DOCTOR CONVERSATION ENDPOINTS
+# =============================================================================
+
+@app.post("/doctor/start", response_model=DoctorResponseModel)
+async def start_doctor_conversation(request: DoctorStartRequest):
+    """
+    Start an intelligent doctor conversation using RAG + LLM chain of reasoning
+    """
+    try:
+        logger.info(f"🩺 Starting intelligent doctor conversation for user {request.user_id}")
+        
+        # Use intelligent doctor with RAG + LLM
+        response = intelligent_doctor.start_conversation(request.user_id, request.message)
+        
+        # Get the actual session ID from the intelligent doctor (most recent session for this user)
+        session_id = None
+        for sid, session in intelligent_doctor.sessions.items():
+            if session.user_id == request.user_id and session.is_active:
+                session_id = sid
+                break
+        
+        if not session_id:
+            # Fallback if session not found (shouldn't happen)
+            import uuid
+            session_id = f"{request.user_id}_session_{str(uuid.uuid4())}"
+        
+        return DoctorResponseModel(
+            session_id=session_id,
+            doctor_response=response.message,
+            follow_up_questions=response.follow_up_questions,
+            urgency_level=response.urgency_assessment,
+            requires_immediate_care=response.requires_immediate_care,
+            confidence=response.confidence_level,
+            medical_reasoning=response.medical_reasoning,
+            timestamp=datetime.now().isoformat()
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error starting doctor conversation: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Error starting consultation. If this is an emergency, seek immediate medical attention."
+        )
+
+@app.post("/doctor/continue", response_model=DoctorResponseModel)
+async def continue_doctor_conversation(request: DoctorContinueRequest):
+    """
+    Continue an intelligent doctor conversation with context awareness
+    """
+    try:
+        logger.info(f"🩺 Continuing doctor conversation: {request.session_id}")
+        
+        # Continue intelligent conversation
+        response = intelligent_doctor.continue_conversation(request.session_id, request.message)
+        
+        return DoctorResponseModel(
+            session_id=request.session_id,
+            doctor_response=response.message,
+            follow_up_questions=response.follow_up_questions,
+            urgency_level=response.urgency_assessment,
+            requires_immediate_care=response.requires_immediate_care,
+            confidence=response.confidence_level,
+            medical_reasoning=response.medical_reasoning,
+            timestamp=datetime.now().isoformat()
+        )
+        
+    except ValueError as e:
+        logger.error(f"❌ Session not found: {e}")
+        raise HTTPException(status_code=404, detail=f"Conversation session not found: {request.session_id}")
+    except Exception as e:
+        logger.error(f"❌ Error continuing doctor conversation: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Error continuing consultation. If this is an emergency, seek immediate medical attention."
+        )
+
+@app.get("/doctor/session/{session_id}/summary")
+async def get_session_summary(session_id: str):
+    """
+    Get summary of doctor conversation session
+    """
+    try:
+        summary = intelligent_doctor.get_session_summary(session_id)
+        
+        if "error" in summary:
+            raise HTTPException(status_code=404, detail=summary["error"])
+            
+        return {
+            "status": "success",
+            "summary": summary
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error getting session summary: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving session summary")
+
+@app.get("/doctor/user/{user_id}/sessions")
+async def get_user_sessions(user_id: str):
+    """
+    Get all sessions for a specific user
+    """
+    try:
+        sessions = intelligent_doctor.get_all_sessions_for_user(user_id)
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "sessions": sessions,
+            "count": len(sessions)
+        }
+    except Exception as e:
+        logger.error(f"❌ Error getting user sessions: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving user sessions")
+
+@app.get("/doctor/sessions/debug")
+async def debug_all_sessions():
+    """
+    Debug endpoint to list all sessions (development only)
+    """
+    try:
+        all_sessions = intelligent_doctor.list_all_sessions()
+        return {
+            "status": "success",
+            "debug_info": all_sessions
+        }
+    except Exception as e:
+        logger.error(f"❌ Error listing all sessions: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving session debug info")
+
+@app.post("/doctor/resume")
+async def resume_or_start_conversation(request: DoctorStartRequest):
+    """
+    Resume most recent session or start new conversation
+    """
+    try:
+        logger.info(f"🔄 Resume/start request for user {request.user_id}")
+        
+        response = intelligent_doctor.resume_or_create_session(request.user_id, request.message)
+        
+        # Find the actual session ID from the response or sessions
+        session_id = None
+        for sid, session in intelligent_doctor.sessions.items():
+            if session.user_id == request.user_id and session.is_active:
+                session_id = sid
+                break
+        
+        return DoctorResponseModel(
+            session_id=session_id or f"unknown_{request.user_id}",
+            doctor_response=response.message,
+            follow_up_questions=response.follow_up_questions,
+            urgency_level=response.urgency_assessment,
+            requires_immediate_care=response.requires_immediate_care,
+            confidence=response.confidence_level,
+            medical_reasoning=response.medical_reasoning,
+            timestamp=datetime.now().isoformat()
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error resuming/starting conversation: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Error with conversation management. If this is an emergency, seek immediate medical attention."
+        )
+
+# =============================================================================
+# RAG AND KNOWLEDGE BASE ENDPOINTS
+# =============================================================================
+
 @app.post("/rag/search")
 async def search_medical_knowledge(request: Dict):
     """
@@ -225,6 +419,59 @@ async def search_medical_knowledge(request: Dict):
     except Exception as e:
         logger.error(f"❌ Error searching medical knowledge: {e}")
         raise HTTPException(status_code=500, detail="Error searching medical knowledge")
+
+@app.get("/rag/stats")
+async def get_knowledge_stats():
+    """
+    Get knowledge base statistics
+    """
+    try:
+        stats = rag_service.get_knowledge_stats()
+        return {
+            "status": "success",
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error(f"❌ Error getting knowledge stats: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving knowledge base stats")
+
+# =============================================================================
+# SYSTEM INFORMATION ENDPOINTS
+# =============================================================================
+
+@app.get("/features")
+async def get_features():
+    """
+    Get available features and capabilities
+    """
+    return {
+        "phase": "Phase 2",
+        "features": {
+            "ml_analysis": {
+                "available": True,
+                "description": "Real machine learning medical diagnosis",
+                "endpoints": ["/analyze-advanced", "/analyze-ml"]
+            },
+            "conversational_doctor": {
+                "available": True,
+                "description": "Intelligent doctor conversations with RAG + LLM",
+                "endpoints": ["/doctor/start", "/doctor/continue", "/doctor/session/{id}/summary"]
+            },
+            "medical_knowledge": {
+                "available": True,
+                "description": "RAG-powered medical knowledge retrieval",
+                "endpoints": ["/rag/search", "/rag/stats"]
+            }
+        },
+        "capabilities": [
+            "TF-IDF machine learning medical diagnosis",
+            "RAG-enhanced medical knowledge retrieval", 
+            "Multi-turn conversational AI with session memory",
+            "Ghana-specific medical conditions",
+            "Emergency detection and routing",
+            "Confidence scoring and uncertainty handling"
+        ]
+    }
 
 # Run the application
 if __name__ == "__main__":
@@ -252,9 +499,10 @@ if __name__ == "__main__":
         logger.error(f"❌ Could not find available port. Ports {original_port}-{port} are all in use.")
         exit(1)
     
-    logger.info(f"🚀 Starting ARIA AI Service on {host}:{port}")
+    logger.info(f"🚀 Starting ARIA AI Service Phase 2 on {host}:{port}")
     logger.info(f"📊 Access API at: http://{host if host != '0.0.0.0' else 'localhost'}:{port}")
     logger.info(f"📚 View docs at: http://{host if host != '0.0.0.0' else 'localhost'}:{port}/docs")
+    logger.info(f"🩺 Features: ML Analysis + Conversational Doctor AI + RAG Knowledge")
     
     try:
         uvicorn.run(app, host=host, port=port)
