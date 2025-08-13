@@ -1,3 +1,5 @@
-__pycache__
+__pycache__/
+*.pyc
 .env
-temp.mdaria-env/
+temp.md
+services/ai-service/aria-env/
