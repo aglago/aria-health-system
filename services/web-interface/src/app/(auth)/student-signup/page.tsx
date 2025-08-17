@@ -16,6 +16,8 @@ export default function StudentSignUp() {
   const [formData, setFormData] = useState({
     student_id: '',
     name: '',
+    email: '',
+    phone: '',
     password: '',
     confirmPassword: ''
   });
@@ -41,11 +43,34 @@ export default function StudentSignUp() {
         throw new Error('Password must be at least 6 characters');
       }
 
-      // Attempt login
+      // Register user
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name || 'UMaT Student',
+          role: 'student',
+          student_id: formData.student_id,
+          password: formData.password,
+          email: formData.email,
+          phone: formData.phone,
+        }),
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Registration failed');
+      }
+
+      const data = await response.json();
+      
+      // Login the user using the auth context (which will set the user state)
       await login({
         student_id: formData.student_id,
         password: formData.password,
-        name: formData.name,
         role: 'student'
       });
 
@@ -97,13 +122,13 @@ export default function StudentSignUp() {
                 <Input
                   id="student_id"
                   name="student_id"
-                  placeholder="e.g., UEB/123/24"
+                  placeholder="Enter your UMaT student ID"
                   value={formData.student_id}
                   onChange={handleInputChange}
                   required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Format: UE[A-Z]/XXX/XX (e.g., UEB/123/24)
+                  Enter your official UMaT student ID (format may vary by year/batch)
                 </p>
               </div>
 
@@ -114,6 +139,30 @@ export default function StudentSignUp() {
                   name="name"
                   placeholder="Your full name"
                   value={formData.name}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email">Email Address (Optional)</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="your.email@umat.edu.gh"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone Number (Optional)</Label>
+                <Input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  placeholder="+233 XX XXX XXXX"
+                  value={formData.phone}
                   onChange={handleInputChange}
                 />
               </div>
