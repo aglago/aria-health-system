@@ -15,6 +15,7 @@ interface DoctorMessage {
   follow_up_questions?: string[];
   requires_immediate_care?: boolean;
   show_appointment_button?: boolean;
+  show_choice_buttons?: boolean;
 }
 
 interface DoctorResponse {
@@ -27,6 +28,7 @@ interface DoctorResponse {
   medical_reasoning: string;
   timestamp: string;
   show_appointment_button?: boolean;
+  show_choice_buttons?: boolean;
 }
 
 interface UserData {
@@ -156,7 +158,8 @@ export default function DoctorChat() {
         medical_reasoning: data.medical_reasoning,
         follow_up_questions: data.follow_up_questions,
         requires_immediate_care: data.requires_immediate_care,
-        show_appointment_button: data.show_appointment_button
+        show_appointment_button: data.show_appointment_button,
+        show_choice_buttons: data.show_choice_buttons
       };
       
       setMessages(prev => [...prev, doctorMessage]);
@@ -201,6 +204,76 @@ export default function DoctorChat() {
           "Get medical help immediately!"
         );
       }
+    }
+  };
+
+  const handleUserChoice = async (choice: 'proceed' | 'add_info') => {
+    if (!sessionId) return;
+    
+    // Send the choice as a message to continue the conversation
+    const choiceMessage = choice === 'proceed' ? 'no' : 'I want to add more information';
+    
+    // Create user message for the choice
+    const userMessage: DoctorMessage = {
+      id: Date.now().toString(),
+      content: choice === 'proceed' ? 'Proceed with assessment' : 'I want to add more information',
+      sender: 'user',
+      timestamp: new Date()
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/aria/doctor/continue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          message: choiceMessage
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data: DoctorResponse = await response.json();
+      
+      const doctorMessage: DoctorMessage = {
+        id: (Date.now() + 1).toString(),
+        content: data.doctor_response,
+        sender: 'doctor',
+        timestamp: new Date(),
+        urgency: data.urgency_level as 'low' | 'medium' | 'high' | 'emergency',
+        confidence: data.confidence,
+        medical_reasoning: data.medical_reasoning,
+        follow_up_questions: data.follow_up_questions,
+        requires_immediate_care: data.requires_immediate_care,
+        show_appointment_button: data.show_appointment_button,
+        show_choice_buttons: data.show_choice_buttons
+      };
+      
+      setMessages(prev => [...prev, doctorMessage]);
+
+      // Handle emergency situations
+      if (data.requires_immediate_care) {
+        handleEmergencyResponse();
+      }
+      
+    } catch (error) {
+      console.error('Choice selection error:', error);
+      const errorMessage: DoctorMessage = {
+        id: (Date.now() + 1).toString(),
+        content: "I apologize, but I'm having trouble processing your choice right now. Please try again or contact UMaT Health Services if this is urgent.",
+        sender: 'doctor',
+        timestamp: new Date(),
+        urgency: 'high'
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -515,6 +588,36 @@ export default function DoctorChat() {
                             </>
                           )}
                         </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Choice Buttons - Proceed vs Add Info */}
+                  {message.show_choice_buttons && sessionId && (
+                    <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded">
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-2 mb-3">
+                          <CheckCircle2 size={16} className="text-blue-600" />
+                          <strong className="text-blue-800 dark:text-blue-200">What would you like to do?</strong>
+                        </div>
+                        <div className="flex gap-3 justify-center">
+                          <button
+                            onClick={() => handleUserChoice('proceed')}
+                            disabled={loading}
+                            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                          >
+                            <CheckCircle2 size={16} />
+                            Proceed with Assessment
+                          </button>
+                          <button
+                            onClick={() => handleUserChoice('add_info')}
+                            disabled={loading}
+                            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                          >
+                            <Send size={16} />
+                            Add More Information
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}

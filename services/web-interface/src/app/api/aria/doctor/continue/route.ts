@@ -16,6 +16,7 @@ interface DoctorResponse {
   medical_reasoning: string;
   timestamp: string;
   show_appointment_button?: boolean;
+  show_choice_buttons?: boolean;
 }
 
 export async function POST(request: NextRequest) {

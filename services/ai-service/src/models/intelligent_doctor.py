@@ -47,6 +47,7 @@ class DoctorResponse:
     requires_immediate_care: bool = False
     confidence_level: float = 0.0
     show_appointment_button: bool = False  # Flag to show "Schedule Appointment" button
+    show_choice_buttons: bool = False  # Flag to show "Proceed" vs "Add Info" buttons
 
 class IntelligentDoctor:
     """
@@ -195,6 +196,9 @@ class IntelligentDoctor:
             # Check if this response should show appointment button
             should_show_appointment_button = "You can now schedule an appointment with a doctor" in response["message"]
             
+            # Check if this response should show choice buttons
+            should_show_choice_buttons = "You can now choose to proceed with the medical assessment" in response["message"]
+            
             return DoctorResponse(
                 message=response["message"],
                 follow_up_questions=response.get("follow_up_questions", []),
@@ -202,7 +206,8 @@ class IntelligentDoctor:
                 medical_reasoning=response.get("reasoning", ""),
                 requires_immediate_care=urgency in ["high", "emergency"],
                 confidence_level=confidence,
-                show_appointment_button=should_show_appointment_button
+                show_appointment_button=should_show_appointment_button,
+                show_choice_buttons=should_show_choice_buttons
             )
             
         except Exception as e:
@@ -401,8 +406,8 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
                         message = "Thank you for all the information you've shared. I have enough details about your condition. You can now schedule an appointment with a doctor for a proper evaluation."
                         questions = []
                     else:
-                        # First time asking - give one final chance
-                        message = "I understand. Is there anything else about your symptoms you'd like me to know, or shall we proceed with the assessment?"
+                        # First time asking - show choice buttons instead of text response
+                        message = "I understand. You can now choose to proceed with the medical assessment and appointment scheduling, or add any additional information about your symptoms."
                         questions = []
                 else:
                     # For any other response in ongoing conversation
@@ -544,10 +549,6 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
         Perform comprehensive medical assessment and generate doctor scheduling
         """
         try:
-            # Debug: Log available sessions
-            logger.info(f"🔍 Looking for session: {session_id}")
-            logger.info(f"🔍 Available sessions: {list(self.sessions.keys())}")
-            
             if session_id not in self.sessions:
                 return {"error": f"Session not found: {session_id}"}
             

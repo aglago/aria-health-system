@@ -89,6 +89,7 @@ class DoctorResponseModel(BaseModel):
     medical_reasoning: str
     timestamp: str
     show_appointment_button: bool = False
+    show_choice_buttons: bool = False
 
 # Create FastAPI application
 app = FastAPI(
@@ -263,7 +264,8 @@ async def start_doctor_conversation(request: DoctorStartRequest):
             confidence=response.confidence_level,
             medical_reasoning=response.medical_reasoning,
             timestamp=datetime.now().isoformat(),
-            show_appointment_button=response.show_appointment_button
+            show_appointment_button=response.show_appointment_button,
+            show_choice_buttons=response.show_choice_buttons
         )
         
     except Exception as e:
@@ -293,7 +295,8 @@ async def continue_doctor_conversation(request: DoctorContinueRequest):
             confidence=response.confidence_level,
             medical_reasoning=response.medical_reasoning,
             timestamp=datetime.now().isoformat(),
-            show_appointment_button=response.show_appointment_button
+            show_appointment_button=response.show_appointment_button,
+            show_choice_buttons=response.show_choice_buttons
         )
         
     except ValueError as e:
@@ -385,7 +388,8 @@ async def resume_or_start_conversation(request: DoctorStartRequest):
             confidence=response.confidence_level,
             medical_reasoning=response.medical_reasoning,
             timestamp=datetime.now().isoformat(),
-            show_appointment_button=response.show_appointment_button
+            show_appointment_button=response.show_appointment_button,
+            show_choice_buttons=response.show_choice_buttons
         )
         
     except Exception as e:
