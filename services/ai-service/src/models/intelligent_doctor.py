@@ -86,7 +86,9 @@ class IntelligentDoctor:
         """Start new conversation with intelligent chain of reasoning"""
         # Generate proper session ID using UUID for reliability
         session_uuid = str(uuid.uuid4())
-        session_id = f"{user_id}_session_{session_uuid}"
+        # Replace problematic characters in user_id for URL safety
+        safe_user_id = user_id.replace("/", "_").replace("\\", "_").replace(" ", "_")
+        session_id = f"{safe_user_id}_session_{session_uuid}"
         
         # Create new session
         session = ConversationSession(

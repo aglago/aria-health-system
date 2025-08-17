@@ -212,8 +212,9 @@ export default function DoctorChat() {
     try {
       console.log('📅 Fetching available appointment times for session:', sessionId);
       
-      // Get available appointment times
-      const timesResponse = await fetch(`/api/aria/doctor/available-times/${sessionId}`);
+      // Get available appointment times (URL encode the session ID)
+      const encodedSessionId = encodeURIComponent(sessionId);
+      const timesResponse = await fetch(`/api/aria/doctor/available-times/${encodedSessionId}`);
       
       if (!timesResponse.ok) {
         throw new Error(`Failed to fetch appointment times: ${timesResponse.status}`);

@@ -26,7 +26,8 @@ export async function GET(
   { params }: { params: { session_id: string } }
 ) {
   try {
-    const { session_id } = params;
+    // URL decode the session ID in case it contains special characters
+    const session_id = decodeURIComponent(params.session_id);
     
     console.log('🗓️ Getting available appointment times for session:', session_id);
 
