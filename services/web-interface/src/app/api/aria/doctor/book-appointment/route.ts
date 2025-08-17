@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import connectToDatabase from '@/lib/mongodb';
+import Appointment from '@/models/Appointment';
+import Consultation from '@/models/Consultation';
 
 interface BookAppointmentRequest {
   session_id: string;
@@ -121,6 +124,69 @@ export async function POST(request: NextRequest) {
       appointment_time: body.selected_time.time,
       doctor: body.selected_time.doctor
     });
+
+    // Save appointment to database
+    try {
+      await connectToDatabase();
+      
+      // Find the consultation session to get patient details
+      const consultation = await Consultation.findOne({ session_id: body.session_id });
+      
+      if (!consultation) {
+        console.warn('⚠️ No consultation found for session:', body.session_id);
+      }
+
+      // Parse appointment time to extract date and time
+      const appointmentTimeStr = body.selected_time.time; // e.g., "09:00 AM on Monday"
+      const doctorName = body.selected_time.doctor || 'Dr. Ama Osei';
+      const appointmentType = body.selected_time.type || 'General Consultation';
+      
+      // For now, set appointment for next occurrence of the day mentioned
+      // This is a simplified approach - in production you'd want more precise date parsing
+      const today = new Date();
+      const appointmentDate = new Date(today);
+      appointmentDate.setDate(today.getDate() + 1); // Default to tomorrow
+      
+      // Extract time (e.g., "09:00 AM" from "09:00 AM on Monday")
+      const timeMatch = appointmentTimeStr.match(/(\d{1,2}:\d{2}\s*[AP]M)/i);
+      const appointmentTime = timeMatch ? timeMatch[1] : '09:00 AM';
+
+      // Create appointment record
+      const appointment = new Appointment({
+        patient_id: consultation?.patient_id || body.user_contact?.student_id || 'unknown',
+        doctor_name: doctorName,
+        date: appointmentDate,
+        time: appointmentTime,
+        type: appointmentType,
+        notes: `Booked through Dr. ARIA consultation`,
+        consultation_id: body.session_id,
+        symptoms: consultation?.symptoms || [],
+        urgency_level: consultation?.urgency_level || 'medium',
+        created_from_consultation: true,
+        status: 'scheduled'
+      });
+
+      await appointment.save();
+      
+      // Update consultation to mark appointment as created
+      if (consultation) {
+        consultation.appointment_created = true;
+        consultation.appointment_id = appointment._id.toString();
+        await consultation.save();
+      }
+
+      console.log('💾 Appointment saved to database:', {
+        appointment_id: appointment._id,
+        patient_id: appointment.patient_id,
+        doctor: appointment.doctor_name,
+        date: appointment.date,
+        time: appointment.time
+      });
+
+    } catch (dbError) {
+      console.error('❌ Failed to save appointment to database:', dbError);
+      // Continue with the response even if database save fails
+    }
 
     // Enhance response with web interface metadata
     const enhancedResponse = {

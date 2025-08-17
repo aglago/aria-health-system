@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import connectToDatabase from '@/lib/mongodb';
+import Consultation from '@/models/Consultation';
 
 // Doctor conversation interfaces
 interface DoctorStartRequest {
@@ -89,6 +91,48 @@ export async function POST(request: NextRequest) {
       follow_up_questions_count: aiData.follow_up_questions?.length || 0,
       requires_immediate_care: aiData.requires_immediate_care
     });
+
+    // Save consultation session to database
+    try {
+      await connectToDatabase();
+      
+      const consultation = new Consultation({
+        session_id: aiData.session_id,
+        patient_id: body.user_id,
+        messages: [
+          {
+            role: 'user',
+            content: body.message,
+            timestamp: new Date()
+          },
+          {
+            role: 'assistant', 
+            content: aiData.doctor_response,
+            timestamp: new Date()
+          }
+        ],
+        symptoms: [], // Will be populated as conversation continues
+        urgency_level: aiData.urgency_level as 'low' | 'medium' | 'high' | 'emergency',
+        requires_immediate_care: aiData.requires_immediate_care,
+        confidence_score: aiData.confidence,
+        medical_reasoning: aiData.medical_reasoning,
+        recommended_actions: [],
+        appointment_recommended: false,
+        status: 'active'
+      });
+
+      await consultation.save();
+      
+      console.log('💾 Consultation session saved to database:', {
+        consultation_id: consultation._id,
+        session_id: consultation.session_id,
+        patient_id: consultation.patient_id
+      });
+
+    } catch (dbError) {
+      console.error('❌ Failed to save consultation to database:', dbError);
+      // Continue with the response even if database save fails
+    }
 
     // Enhance response with Phase 2 metadata
     const enhancedResponse = {

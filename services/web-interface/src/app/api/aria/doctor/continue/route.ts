@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import connectToDatabase from '@/lib/mongodb';
+import Consultation from '@/models/Consultation';
 
 // Doctor conversation interfaces
 interface DoctorContinueRequest {
@@ -110,6 +112,55 @@ export async function POST(request: NextRequest) {
       requires_immediate_care: aiData.requires_immediate_care,
       urgency_escalation: aiData.urgency_level === 'high' || aiData.urgency_level === 'emergency'
     });
+
+    // Update consultation session in database
+    try {
+      await connectToDatabase();
+      
+      const consultation = await Consultation.findOne({ session_id: body.session_id });
+      
+      if (consultation) {
+        // Add new messages to the conversation
+        consultation.messages.push(
+          {
+            role: 'user',
+            content: body.message,
+            timestamp: new Date()
+          },
+          {
+            role: 'assistant',
+            content: aiData.doctor_response,
+            timestamp: new Date()
+          }
+        );
+
+        // Update consultation metadata
+        consultation.urgency_level = aiData.urgency_level as 'low' | 'medium' | 'high' | 'emergency';
+        consultation.requires_immediate_care = aiData.requires_immediate_care;
+        consultation.confidence_score = aiData.confidence;
+        consultation.medical_reasoning = aiData.medical_reasoning;
+
+        // Check if appointment is recommended
+        if (aiData.show_appointment_button) {
+          consultation.appointment_recommended = true;
+        }
+
+        await consultation.save();
+        
+        console.log('💾 Consultation session updated in database:', {
+          session_id: consultation.session_id,
+          messages_count: consultation.messages.length,
+          urgency_level: consultation.urgency_level
+        });
+
+      } else {
+        console.warn('⚠️ Consultation session not found for update:', body.session_id);
+      }
+
+    } catch (dbError) {
+      console.error('❌ Failed to update consultation in database:', dbError);
+      // Continue with the response even if database save fails
+    }
 
     // Enhance response with Phase 2 metadata
     const enhancedResponse = {
