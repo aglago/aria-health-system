@@ -23,11 +23,13 @@ interface AvailableTimesResponse {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { session_id: string } }
+  { params }: { params: Promise<{ session_id: string }> }
 ) {
   try {
+    // Await params as required by Next.js 15
+    const { session_id: encoded_session_id } = await params;
     // URL decode the session ID in case it contains special characters
-    const session_id = decodeURIComponent(params.session_id);
+    const session_id = decodeURIComponent(encoded_session_id);
     
     console.log('🗓️ Getting available appointment times for session:', session_id);
 
@@ -62,9 +64,14 @@ export async function GET(
       if (aiResponse.status === 404) {
         return NextResponse.json({
           error: 'Session not found or expired',
-          message: 'Please start a new consultation to schedule an appointment',
+          message: 'Your consultation session has expired. You can either start a new consultation or contact UMaT Health Center directly to schedule an appointment.',
+          suggestions: [
+            'Start a new consultation with Dr. ARIA',
+            'Call UMaT Health Center directly for appointment booking'
+          ],
           fallback_contact: {
             health_center: '+233-312-022-242',
+            appointment_booking: '+233-312-022-245',
             emergency: '193'
           }
         }, { status: 404 });

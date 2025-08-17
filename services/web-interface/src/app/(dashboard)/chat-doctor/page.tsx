@@ -217,6 +217,28 @@ export default function DoctorChat() {
       const timesResponse = await fetch(`/api/aria/doctor/available-times/${encodedSessionId}`);
       
       if (!timesResponse.ok) {
+        if (timesResponse.status === 404) {
+          const errorData = await timesResponse.json();
+          
+          const sessionExpiredMessage: DoctorMessage = {
+            id: Date.now().toString(),
+            content: `⚠️ **Session Expired**\n\n${errorData.message || 'Your consultation session has expired.'}\n\n**Options:**\n• Start a new consultation with Dr. ARIA\n• Contact UMaT Health Center directly\n\n📞 **Contact Information:**\n• Health Center: ${errorData.fallback_contact?.health_center || '+233-312-022-242'}\n• Appointment Booking: ${errorData.fallback_contact?.appointment_booking || '+233-312-022-245'}`,
+            sender: 'doctor',
+            timestamp: new Date(),
+            urgency: 'medium'
+          };
+          
+          setMessages(prev => [...prev, sessionExpiredMessage]);
+          
+          alert(
+            "⚠️ Session Expired\n\n" +
+            "Your consultation session has expired.\n" +
+            "Please start a new consultation or call:\n" +
+            "+233-312-022-242"
+          );
+          return;
+        }
+        
         throw new Error(`Failed to fetch appointment times: ${timesResponse.status}`);
       }
       

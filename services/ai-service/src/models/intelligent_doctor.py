@@ -544,6 +544,10 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
         Perform comprehensive medical assessment and generate doctor scheduling
         """
         try:
+            # Debug: Log available sessions
+            logger.info(f"🔍 Looking for session: {session_id}")
+            logger.info(f"🔍 Available sessions: {list(self.sessions.keys())}")
+            
             if session_id not in self.sessions:
                 return {"error": f"Session not found: {session_id}"}
             
