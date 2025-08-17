@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Send, Bot, User, AlertTriangle, Phone, Heart, ArrowLeft, Activity, Clock, CheckCircle2 } from 'lucide-react';
+import { Send, Bot, User, AlertTriangle, Phone, Heart, ArrowLeft, Activity, Clock, CheckCircle2, Calendar } from 'lucide-react';
 
 interface DoctorMessage {
   id: string;
@@ -14,6 +14,7 @@ interface DoctorMessage {
   medical_reasoning?: string;
   follow_up_questions?: string[];
   requires_immediate_care?: boolean;
+  show_appointment_button?: boolean;
 }
 
 interface DoctorResponse {
@@ -25,6 +26,7 @@ interface DoctorResponse {
   confidence: number;
   medical_reasoning: string;
   timestamp: string;
+  show_appointment_button?: boolean;
 }
 
 interface UserData {
@@ -48,6 +50,7 @@ export default function DoctorChat() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [user, setUser] = useState<UserData | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [appointmentLoading, setAppointmentLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   
@@ -152,7 +155,8 @@ export default function DoctorChat() {
         confidence: data.confidence,
         medical_reasoning: data.medical_reasoning,
         follow_up_questions: data.follow_up_questions,
-        requires_immediate_care: data.requires_immediate_care
+        requires_immediate_care: data.requires_immediate_care,
+        show_appointment_button: data.show_appointment_button
       };
       
       setMessages(prev => [...prev, doctorMessage]);
@@ -197,6 +201,111 @@ export default function DoctorChat() {
           "Get medical help immediately!"
         );
       }
+    }
+  };
+
+  const handleScheduleAppointment = async (sessionId: string) => {
+    if (!sessionId) return;
+    
+    setAppointmentLoading(true);
+    
+    try {
+      console.log('📅 Fetching available appointment times for session:', sessionId);
+      
+      // Get available appointment times
+      const timesResponse = await fetch(`/api/aria/doctor/available-times/${sessionId}`);
+      
+      if (!timesResponse.ok) {
+        throw new Error(`Failed to fetch appointment times: ${timesResponse.status}`);
+      }
+      
+      const timesData = await timesResponse.json();
+      
+      console.log('✅ Available times received:', timesData);
+      
+      // Show appointment times to user (simplified for now)
+      const appointmentOptions = timesData.available_times.map((time: any, index: number) => 
+        `${index + 1}. ${time.time}${time.doctor ? ` - ${time.doctor}` : ''}${time.room ? ` (Room ${time.room})` : ''}`
+      ).join('\n');
+      
+      const selection = prompt(
+        `📅 AVAILABLE APPOINTMENT TIMES\n\n` +
+        `Assessment: ${timesData.assessment_summary.severity_score}/100 (${timesData.assessment_summary.priority_level})\n\n` +
+        `Available appointments:\n${appointmentOptions}\n\n` +
+        `Enter the number of your preferred appointment time:`
+      );
+      
+      if (selection && !isNaN(parseInt(selection))) {
+        const selectedIndex = parseInt(selection) - 1;
+        const selectedTime = timesData.available_times[selectedIndex];
+        
+        if (selectedTime) {
+          // Book the appointment
+          const bookingResponse = await fetch('/api/aria/doctor/book-appointment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              session_id: sessionId,
+              selected_time: selectedTime,
+              user_contact: {
+                student_id: user?.student_id,
+                email: user?.student_id ? `${user.student_id}@umat.edu.gh` : undefined
+              }
+            })
+          });
+          
+          if (!bookingResponse.ok) {
+            throw new Error(`Booking failed: ${bookingResponse.status}`);
+          }
+          
+          const bookingData = await bookingResponse.json();
+          
+          // Show booking confirmation
+          const confirmation = bookingData.booking;
+          if (confirmation && confirmation.booking_confirmed) {
+            const confirmationMessage: DoctorMessage = {
+              id: Date.now().toString(),
+              content: `✅ **APPOINTMENT BOOKED SUCCESSFULLY!**\n\n📅 **Appointment Details:**\n• **Doctor:** ${confirmation.booking_details.doctor}\n• **Time:** ${confirmation.booking_details.appointment_time}\n• **Location:** ${confirmation.booking_details.location}\n• **Room:** ${confirmation.booking_details.room}\n• **Duration:** ${confirmation.booking_details.duration}\n• **Booking ID:** ${confirmation.booking_details.booking_id}\n\n📋 **What to bring:**\n${confirmation.patient_preparation.bring_items.map((item: string) => `• ${item}`).join('\n')}\n\n📞 **Contact Information:**\n• Health Center: ${confirmation.contact_info.health_center}\n• Emergency: ${confirmation.contact_info.emergency}\n• Appointment Changes: ${confirmation.contact_info.appointment_changes}\n\n**Please arrive 10 minutes early for check-in.**`,
+              sender: 'doctor',
+              timestamp: new Date(),
+              urgency: 'low'
+            };
+            
+            setMessages(prev => [...prev, confirmationMessage]);
+            
+            alert(
+              `✅ APPOINTMENT CONFIRMED!\n\n` +
+              `Doctor: ${confirmation.booking_details.doctor}\n` +
+              `Time: ${confirmation.booking_details.appointment_time}\n` +
+              `Location: ${confirmation.booking_details.location}\n` +
+              `Booking ID: ${confirmation.booking_details.booking_id}\n\n` +
+              `Please arrive 10 minutes early.`
+            );
+          }
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Appointment booking error:', error);
+      
+      const errorMessage: DoctorMessage = {
+        id: Date.now().toString(),
+        content: `❌ **Appointment Booking Failed**\n\nI'm sorry, but there was an issue scheduling your appointment. Please contact UMaT Health Center directly to book your appointment.\n\n📞 **Contact Information:**\n• UMaT Health Center: +233-312-022-242\n• Appointment Booking: +233-312-022-245\n\nThey will be able to assist you with scheduling based on your consultation.`,
+        sender: 'doctor',
+        timestamp: new Date(),
+        urgency: 'medium'
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+      
+      alert(
+        "❌ Booking Error\n\n" +
+        "Unable to complete appointment booking.\n" +
+        "Please call UMaT Health Center directly:\n" +
+        "+233-312-022-242"
+      );
+    } finally {
+      setAppointmentLoading(false);
     }
   };
   
@@ -350,6 +459,40 @@ export default function DoctorChat() {
                       <p className="mt-1 text-xs">
                         UMaT Health Center: +233-312-022-242 | Emergency: 193
                       </p>
+                    </div>
+                  )}
+                  
+                  {/* Schedule Appointment Button */}
+                  {message.show_appointment_button && sessionId && (
+                    <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <Calendar size={16} className="text-green-600" />
+                            <strong className="text-green-800 dark:text-green-200">Ready to Schedule</strong>
+                          </div>
+                          <p className="text-green-700 dark:text-green-300 text-sm">
+                            Your consultation is complete. Schedule an appointment with a doctor for proper evaluation.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleScheduleAppointment(sessionId)}
+                          disabled={appointmentLoading}
+                          className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                        >
+                          {appointmentLoading ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Booking...
+                            </>
+                          ) : (
+                            <>
+                              <Calendar size={16} />
+                              Schedule Appointment
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
