@@ -46,6 +46,7 @@ class DoctorResponse:
     medical_reasoning: str = ""
     requires_immediate_care: bool = False
     confidence_level: float = 0.0
+    show_appointment_button: bool = False  # Flag to show "Schedule Appointment" button
 
 class IntelligentDoctor:
     """
@@ -189,13 +190,17 @@ class IntelligentDoctor:
             urgency = self._assess_urgency_intelligent(current_message, medical_context)
             confidence = self._calculate_confidence_intelligent(medical_context, conversation_context)
             
+            # Check if this response should show appointment button
+            should_show_appointment_button = "You can now schedule an appointment with a doctor" in response["message"]
+            
             return DoctorResponse(
                 message=response["message"],
                 follow_up_questions=response.get("follow_up_questions", []),
                 urgency_assessment=urgency,
                 medical_reasoning=response.get("reasoning", ""),
                 requires_immediate_care=urgency in ["high", "emergency"],
-                confidence_level=confidence
+                confidence_level=confidence,
+                show_appointment_button=should_show_appointment_button
             )
             
         except Exception as e:
@@ -348,8 +353,9 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
                 message = f"I understand this started {user_message}. Can you describe the main symptoms you're experiencing in detail?"
                 questions = []
         
-        # Handle pain scale responses
-        elif any(scale in message_lower for scale in ["out of 10", "scale", "rate", "/10", "pain level"]) or any(str(i) in user_message for i in range(1, 11)):
+        # Handle pain scale responses (but not duration responses)
+        elif (any(scale in message_lower for scale in ["out of 10", "scale", "rate", "/10", "pain level"]) or 
+              (any(str(i) in user_message for i in range(1, 11)) and not any(time_word in message_lower for time_word in ["day", "week", "month", "hour", "minute", "ago", "since"]))):
             if is_ongoing_conversation:
                 message = f"I understand you're rating this as {user_message}. That helps me assess the severity. Now, have you tried any treatments, medications, or remedies so far to help with this?"
                 questions = []  # Wait for their answer about treatments
@@ -389,7 +395,8 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
                     anything_else_count = conversation_context.count("Is there anything else about your symptoms") if conversation_context else 0
                     
                     if anything_else_count >= 1:  # If we already asked "anything else" before
-                        message = "Thank you for all the information you've shared. I believe I have enough details to help assess your condition. To complete my evaluation, I recommend using our assessment feature which will provide you with a comprehensive analysis and help schedule an appropriate appointment if needed."
+                        # Show appointment button instead of auto-triggering assessment
+                        message = "Thank you for all the information you've shared. I have enough details about your condition. You can now schedule an appointment with a doctor for a proper evaluation."
                         questions = []
                     else:
                         # First time asking - give one final chance

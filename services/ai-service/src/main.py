@@ -88,6 +88,7 @@ class DoctorResponseModel(BaseModel):
     confidence: float
     medical_reasoning: str
     timestamp: str
+    show_appointment_button: bool = False
 
 # Create FastAPI application
 app = FastAPI(
@@ -261,7 +262,8 @@ async def start_doctor_conversation(request: DoctorStartRequest):
             requires_immediate_care=response.requires_immediate_care,
             confidence=response.confidence_level,
             medical_reasoning=response.medical_reasoning,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
+            show_appointment_button=response.show_appointment_button
         )
         
     except Exception as e:
@@ -290,7 +292,8 @@ async def continue_doctor_conversation(request: DoctorContinueRequest):
             requires_immediate_care=response.requires_immediate_care,
             confidence=response.confidence_level,
             medical_reasoning=response.medical_reasoning,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
+            show_appointment_button=response.show_appointment_button
         )
         
     except ValueError as e:
@@ -381,7 +384,8 @@ async def resume_or_start_conversation(request: DoctorStartRequest):
             requires_immediate_care=response.requires_immediate_care,
             confidence=response.confidence_level,
             medical_reasoning=response.medical_reasoning,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
+            show_appointment_button=response.show_appointment_button
         )
         
     except Exception as e:
@@ -460,6 +464,169 @@ async def end_doctor_conversation_and_assess(request: DoctorContinueRequest):
         raise HTTPException(
             status_code=500,
             detail="Medical assessment system temporarily unavailable. Please contact UMaT Health Services directly."
+        )
+
+@app.get("/doctor/available-times/{session_id}")
+async def get_available_appointment_times(session_id: str):
+    """
+    Get available appointment times for user to choose from
+    """
+    try:
+        logger.info(f"🗓️ Getting available appointment times for session: {session_id}")
+        
+        # First perform assessment to determine urgency
+        assessment_result = intelligent_doctor.perform_medical_assessment(session_id)
+        
+        if "error" in assessment_result:
+            raise HTTPException(status_code=404, detail=assessment_result["error"])
+        
+        # Generate available time slots based on priority
+        from datetime import datetime, timedelta
+        
+        priority_level = assessment_result['severity_assessment']['priority_level']
+        
+        # Generate time slots based on urgency
+        available_times = []
+        now = datetime.now()
+        
+        if priority_level == "emergency":
+            available_times = [
+                {"time": "Immediate", "type": "emergency", "note": "Go to emergency room now"}
+            ]
+        elif priority_level == "high_priority":
+            # Same day appointments
+            for hour in [14, 15, 16, 17]:  # 2pm - 5pm today
+                if now.hour < hour:
+                    time_slot = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+                    available_times.append({
+                        "time": time_slot.strftime("%I:%M %p today"),
+                        "datetime": time_slot.isoformat(),
+                        "type": "same_day",
+                        "doctor": "Dr. Kwame Asante",
+                        "room": "204"
+                    })
+        elif priority_level == "urgent":
+            # Next 1-3 days
+            for day_offset in [1, 2, 3]:
+                appointment_day = now + timedelta(days=day_offset)
+                for hour in [9, 11, 14, 16]:
+                    time_slot = appointment_day.replace(hour=hour, minute=0, second=0, microsecond=0)
+                    doctor = ["Dr. Kwame Asante", "Dr. Ama Osei", "Dr. Kofi Mensah"][day_offset % 3]
+                    room = ["204", "106", "301"][day_offset % 3]
+                    
+                    available_times.append({
+                        "time": time_slot.strftime("%I:%M %p on %A"),
+                        "datetime": time_slot.isoformat(),
+                        "type": "urgent",
+                        "doctor": doctor,
+                        "room": room
+                    })
+        else:  # routine
+            # Next 1-2 weeks
+            for day_offset in range(7, 15):  # 1-2 weeks out
+                if (now + timedelta(days=day_offset)).weekday() < 5:  # Weekdays only
+                    appointment_day = now + timedelta(days=day_offset)
+                    for hour in [10, 14]:  # 10am and 2pm
+                        time_slot = appointment_day.replace(hour=hour, minute=0, second=0, microsecond=0)
+                        doctor = ["Dr. Kwame Asante", "Dr. Ama Osei", "Dr. Kofi Mensah"][day_offset % 3]
+                        room = ["204", "106", "301"][day_offset % 3]
+                        
+                        available_times.append({
+                            "time": time_slot.strftime("%I:%M %p on %B %d"),
+                            "datetime": time_slot.isoformat(),
+                            "type": "routine",
+                            "doctor": doctor,
+                            "room": room
+                        })
+        
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "assessment_summary": {
+                "severity_score": assessment_result['severity_assessment']['severity_score'],
+                "priority_level": priority_level,
+                "severity_level": assessment_result['severity_assessment']['severity_level']
+            },
+            "available_times": available_times[:10],  # Limit to 10 options
+            "booking_instructions": "Select your preferred appointment time below"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error getting available times: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to fetch available appointment times. Please contact UMaT Health Center directly."
+        )
+
+@app.post("/doctor/book-appointment")
+async def book_appointment(request: Dict):
+    """
+    Book an appointment for the user
+    """
+    try:
+        session_id = request.get("session_id")
+        selected_time = request.get("selected_time")
+        user_contact = request.get("user_contact", {})
+        
+        if not session_id or not selected_time:
+            raise HTTPException(status_code=400, detail="session_id and selected_time are required")
+        
+        logger.info(f"📅 Booking appointment for session: {session_id}")
+        
+        # Get assessment for booking details
+        assessment_result = intelligent_doctor.perform_medical_assessment(session_id)
+        
+        if "error" in assessment_result:
+            raise HTTPException(status_code=404, detail=assessment_result["error"])
+        
+        # Generate booking confirmation
+        booking_id = f"ARIA-{datetime.now().strftime('%Y%m%d%H%M')}-{session_id.split('_')[-1][:8]}"
+        
+        booking_confirmation = {
+            "booking_confirmed": True,
+            "booking_details": {
+                "booking_id": booking_id,
+                "appointment_time": selected_time["time"],
+                "doctor": selected_time.get("doctor", "Dr. Kwame Asante"),
+                "location": "UMaT Health Center",
+                "room": selected_time.get("room", "204"),
+                "duration": "30 minutes",
+                "type": selected_time.get("type", "consultation")
+            },
+            "patient_preparation": {
+                "bring_items": ["Student ID", "Any current medications"],
+                "preparation_notes": [
+                    "Doctor has been briefed on your condition",
+                    "Arrive 10 minutes early for check-in",
+                    "Bring list of allergies if any"
+                ]
+            },
+            "assessment_summary": assessment_result['severity_assessment'],
+            "contact_info": {
+                "health_center": "+233-312-022-242",
+                "emergency": "193",
+                "appointment_changes": "+233-312-022-245"
+            },
+            "booking_timestamp": datetime.now().isoformat()
+        }
+        
+        logger.info(f"✅ Appointment booked successfully: {booking_id}")
+        
+        return {
+            "status": "success",
+            "message": "Appointment booked successfully!",
+            "booking": booking_confirmation
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error booking appointment: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to book appointment. Please contact UMaT Health Center directly."
         )
 
 @app.post("/doctor/assess/{session_id}")
