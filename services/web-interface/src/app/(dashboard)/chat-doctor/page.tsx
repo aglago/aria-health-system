@@ -321,6 +321,13 @@ export default function DoctorChat() {
         setSelectedAppointment(null);
         setAppointmentTimes([]);
         setAssessmentSummary(null);
+
+        // Trigger a global event to refresh appointments page if it's open
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('appointmentBooked', {
+            detail: { appointment: confirmation.booking_details }
+          }));
+        }
       }
       
     } catch (error) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/layout/navbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,19 +10,26 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Calendar as CalendarIcon, Clock, User, Stethoscope, Plus, Bot } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Stethoscope, Plus, Bot } from 'lucide-react';
 import Link from 'next/link';
-import { format, addDays, isToday, isTomorrow } from 'date-fns';
+import { format, isToday, isTomorrow } from 'date-fns';
 import { useAuth } from '@/lib/auth/auth-context';
 
 interface Appointment {
   id: string;
-  date: Date;
+  date: Date | string;
   time: string;
-  doctor: string;
+  doctor?: string; // For backward compatibility
+  doctor_name?: string; // New field from database
   type: string;
-  status: 'scheduled' | 'completed' | 'cancelled';
+  status: 'scheduled' | 'completed' | 'cancelled' | 'no-show';
   notes?: string;
+  patient_id?: string;
+  doctor_id?: string;
+  consultation_id?: string;
+  symptoms?: string[];
+  urgency_level?: string;
+  created_from_consultation?: boolean;
 }
 
 interface TimeSlot {
@@ -38,42 +45,56 @@ export default function Appointments() {
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [appointmentType, setAppointmentType] = useState('');
   const [notes, setNotes] = useState('');
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Redirect if not authenticated
+  // Fetch appointments from database
+  const fetchAppointments = async () => {
+    try {
+      const response = await fetch('/api/appointments');
+      if (response.ok) {
+        const data = await response.json();
+        setAppointments(data.appointments);
+      } else {
+        console.error('Failed to fetch appointments:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchAppointments();
+    }
+  }, [user]);
+
+  // Listen for appointment booking events from Dr. ARIA
+  useEffect(() => {
+    const handleAppointmentBooked = () => {
+      console.log('🔄 Appointment booked event received, refreshing appointments...');
+      fetchAppointments();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('appointmentBooked', handleAppointmentBooked);
+      return () => window.removeEventListener('appointmentBooked', handleAppointmentBooked);
+    }
+  }, []);
+
+  // Redirect if not authenticated - only on client side
+  useEffect(() => {
+    if (!user) {
+      router.push('/role-selection');
+    }
+  }, [user, router]);
+
   if (!user) {
-    router.push('/role-selection');
     return null;
   }
 
-  // Mock existing appointments
-  const appointments: Appointment[] = [
-    {
-      id: '1',
-      date: addDays(new Date(), 2),
-      time: '10:00 AM',
-      doctor: 'Dr. Smith',
-      type: 'General Consultation',
-      status: 'scheduled',
-      notes: 'Follow-up for headaches'
-    },
-    {
-      id: '2',
-      date: addDays(new Date(), 5),
-      time: '2:30 PM',
-      doctor: 'Dr. Johnson',
-      type: 'Health Check-up',
-      status: 'scheduled'
-    },
-    {
-      id: '3',
-      date: addDays(new Date(), -3),
-      time: '11:00 AM',
-      doctor: 'Dr. Williams',
-      type: 'Emergency Consultation',
-      status: 'completed',
-      notes: 'Allergic reaction treatment'
-    }
-  ];
 
   // Mock available time slots
   const timeSlots: TimeSlot[] = [
@@ -107,7 +128,7 @@ export default function Appointments() {
     return daysSinceConsultation <= 30;
   };
 
-  const handleBookAppointment = () => {
+  const handleBookAppointment = async () => {
     if (!selectedDate || !selectedTime || !appointmentType) {
       alert('Please select date, time, and appointment type');
       return;
@@ -120,13 +141,40 @@ export default function Appointments() {
       return;
     }
 
-    // Mock booking logic
-    alert(`Appointment booked for ${format(selectedDate, 'PPP')} at ${selectedTime}`);
-    setIsBookingModalOpen(false);
-    setSelectedDate(undefined);
-    setSelectedTime('');
-    setAppointmentType('');
-    setNotes('');
+    try {
+      const response = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          date: selectedDate.toISOString(),
+          time: selectedTime,
+          type: appointmentType,
+          doctor_name: 'Dr. Smith', // Default doctor for now
+          notes: notes || undefined,
+          urgency_level: 'medium'
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Add new appointment to the list
+        setAppointments(prev => [...prev, data.appointment]);
+        alert(`Appointment booked successfully for ${format(selectedDate, 'PPP')} at ${selectedTime}`);
+        setIsBookingModalOpen(false);
+        setSelectedDate(undefined);
+        setSelectedTime('');
+        setAppointmentType('');
+        setNotes('');
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to book appointment: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Error booking appointment:', error);
+      alert('Failed to book appointment. Please try again.');
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -146,6 +194,15 @@ export default function Appointments() {
 
   const upcomingAppointments = appointments.filter(apt => apt.status === 'scheduled');
   const pastAppointments = appointments.filter(apt => apt.status === 'completed');
+  
+  // Calculate appointments this month
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const thisMonthAppointments = appointments.filter(apt => {
+    const aptDate = new Date(apt.date);
+    return aptDate.getMonth() === currentMonth && aptDate.getFullYear() === currentYear;
+  });
+  
   const hasValidConsultation = checkConsultationRequired();
 
   return (
@@ -218,7 +275,7 @@ export default function Appointments() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">This Month</p>
-                    <p className="text-3xl font-bold text-foreground">5</p>
+                    <p className="text-3xl font-bold text-foreground">{thisMonthAppointments.length}</p>
                   </div>
                   <Clock className="h-8 w-8 text-green-600" />
                 </div>
@@ -251,13 +308,17 @@ export default function Appointments() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {upcomingAppointments.length > 0 ? (
+                  {isLoading ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">Loading appointments...</p>
+                    </div>
+                  ) : upcomingAppointments.length > 0 ? (
                     upcomingAppointments.map((appointment) => (
                       <div key={appointment.id} className="border rounded-lg p-4">
                         <div className="flex items-start justify-between mb-2">
                           <div>
                             <h3 className="font-medium">{appointment.type}</h3>
-                            <p className="text-sm text-muted-foreground">{appointment.doctor}</p>
+                            <p className="text-sm text-muted-foreground">{appointment.doctor_name || appointment.doctor}</p>
                           </div>
                           <Badge className={getStatusColor(appointment.status)}>
                             {appointment.status}
@@ -266,7 +327,7 @@ export default function Appointments() {
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <div className="flex items-center gap-1">
                             <CalendarIcon className="w-3 h-3" />
-                            {getDateLabel(appointment.date)}
+                            {getDateLabel(new Date(appointment.date))}
                           </div>
                           <div className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
@@ -288,6 +349,7 @@ export default function Appointments() {
                         onClick={() => setIsBookingModalOpen(true)}
                         className="mt-4"
                         variant="outline"
+                        disabled={!hasValidConsultation}
                       >
                         Book your first appointment
                       </Button>
@@ -310,13 +372,17 @@ export default function Appointments() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {pastAppointments.length > 0 ? (
+                  {isLoading ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">Loading appointments...</p>
+                    </div>
+                  ) : pastAppointments.length > 0 ? (
                     pastAppointments.map((appointment) => (
                       <div key={appointment.id} className="border rounded-lg p-4">
                         <div className="flex items-start justify-between mb-2">
                           <div>
                             <h3 className="font-medium">{appointment.type}</h3>
-                            <p className="text-sm text-muted-foreground">{appointment.doctor}</p>
+                            <p className="text-sm text-muted-foreground">{appointment.doctor_name || appointment.doctor}</p>
                           </div>
                           <Badge className={getStatusColor(appointment.status)}>
                             {appointment.status}
@@ -325,7 +391,7 @@ export default function Appointments() {
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <div className="flex items-center gap-1">
                             <CalendarIcon className="w-3 h-3" />
-                            {format(appointment.date, 'MMM dd, yyyy')}
+                            {format(new Date(appointment.date), 'MMM dd, yyyy')}
                           </div>
                           <div className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
