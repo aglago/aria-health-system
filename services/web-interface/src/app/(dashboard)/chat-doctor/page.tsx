@@ -2,7 +2,13 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Send, Bot, User, AlertTriangle, Phone, Heart, ArrowLeft, Activity, Clock, CheckCircle2, Calendar } from 'lucide-react';
+import Navbar from '@/components/layout/navbar';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Send, Bot, User, AlertTriangle, Phone, Heart, Activity, Clock, CheckCircle2, Calendar } from 'lucide-react';
+import { useAuth } from '@/lib/auth/auth-context';
 
 interface DoctorMessage {
   id: string;
@@ -31,13 +37,8 @@ interface DoctorResponse {
   show_choice_buttons?: boolean;
 }
 
-interface UserData {
-  student_id: string;
-  name: string;
-  institution: string;
-}
-
 export default function DoctorChat() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<DoctorMessage[]>([
     {
       id: '1',
@@ -50,8 +51,6 @@ export default function DoctorChat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [user, setUser] = useState<UserData | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
   const [appointmentLoading, setAppointmentLoading] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [appointmentTimes, setAppointmentTimes] = useState<any[]>([]);
@@ -68,35 +67,23 @@ export default function DoctorChat() {
     scrollToBottom();
   }, [messages]);
 
-  // Check authentication on component mount
+  // Update welcome message with user's name
   useEffect(() => {
-    checkAuthentication();
-  }, []);
-
-  const checkAuthentication = async () => {
-    try {
-      const response = await fetch('/api/auth/verify');
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data.user);
-        
-        // Update welcome message with user's name
-        setMessages(prev => prev.map(msg => 
-          msg.id === '1' ? {
-            ...msg,
-            content: `Hello ${data.user.name || data.user.student_id}! I'm Dr. ARIA, your intelligent medical AI assistant. I'm here to have a natural conversation with you about your health concerns.\n\n🩺 **How I work:**\n• I ask follow-up questions like a real doctor would\n• I remember our entire conversation for better understanding\n• I use medical knowledge from textbooks and research\n• I provide clear reasoning behind my medical assessments\n• I'm specially trained on Ghana-specific health conditions\n\n**What's bringing you in today? Please describe any symptoms or health concerns you're experiencing.**`
-          } : msg
-        ));
-      } else {
-        router.push('/login');
-      }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      router.push('/login');
-    } finally {
-      setAuthLoading(false);
+    if (user) {
+      setMessages(prev => prev.map(msg => 
+        msg.id === '1' ? {
+          ...msg,
+          content: `Hello ${user.name || user.student_id}! I'm Dr. ARIA, your intelligent medical AI assistant. I'm here to have a natural conversation with you about your health concerns.\n\n🩺 **How I work:**\n• I ask follow-up questions like a real doctor would\n• I remember our entire conversation for better understanding\n• I use medical knowledge from textbooks and research\n• I provide clear reasoning behind my medical assessments\n• I'm specially trained on Ghana-specific health conditions\n\n**What's bringing you in today? Please describe any symptoms or health concerns you're experiencing.**`
+        } : msg
+      ));
     }
-  };
+  }, [user]);
+
+  // Redirect if not authenticated
+  if (!user) {
+    router.push('/role-selection');
+    return null;
+  }
 
   const handleSendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -121,7 +108,7 @@ export default function DoctorChat() {
         // Start new conversation
         apiEndpoint = '/api/aria/doctor/start';
         requestBody = {
-          user_id: user?.student_id || 'anonymous',
+          user_id: user?.student_id || user?.id || 'anonymous',
           message: currentInput
         };
       } else {
@@ -167,6 +154,15 @@ export default function DoctorChat() {
       };
       
       setMessages(prev => [...prev, doctorMessage]);
+
+      // Set consultation completion flag when appointment booking becomes available
+      if (data.show_appointment_button && user) {
+        localStorage.setItem(`consultation_${user.student_id || user.id}`, JSON.stringify({
+          date: new Date().toISOString(),
+          sessionId: sessionId || data.session_id,
+          completed: true
+        }));
+      }
 
       // Handle emergency situations
       if (data.requires_immediate_care) {
@@ -295,8 +291,8 @@ export default function DoctorChat() {
           session_id: sessionId,
           selected_time: selectedAppointment,
           user_contact: {
-            student_id: user?.student_id,
-            email: user?.student_id ? `${user.student_id}@umat.edu.gh` : undefined
+            student_id: user?.student_id || user?.id,
+            email: user?.student_id ? `${user.student_id}@umat.edu.gh` : user?.id ? `${user.id}@umat.edu.gh` : undefined
           }
         })
       });
@@ -401,419 +397,396 @@ export default function DoctorChat() {
     }
   };
   
-  const getUrgencyColor = (urgency?: string) => {
-    switch (urgency) {
-      case 'emergency': return 'border-red-500 bg-red-50 dark:bg-red-950';
-      case 'high': return 'border-orange-500 bg-orange-50 dark:bg-orange-950';
-      case 'medium': return 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950';
-      default: return 'border-gray-200 bg-white dark:bg-gray-800 dark:border-gray-700';
-    }
-  };
-
-
-  // Show loading screen while checking authentication
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-indigo-950 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <Heart className="text-white" size={32} />
-          </div>
-          <p className="text-blue-600 dark:text-blue-300">Loading Dr. ARIA...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-indigo-950">
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.push('/')}
-              className="p-2 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-              title="Back to ARIA Chat"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            
-            <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-              <Bot className="text-white" size={24} />
-            </div>
-            
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-blue-900 dark:text-blue-100">Dr. ARIA</h1>
-                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
-                  Conversational AI
-                </span>
+    <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
+      <Navbar />
+      
+      <main className="container mx-auto px-4 py-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+                <Bot className="text-white" size={24} />
               </div>
-              <p className="text-blue-600 dark:text-blue-300">Intelligent Medical Conversation</p>
-            </div>
-            
-            <div className="ml-auto flex items-center gap-4">
-              {sessionId && (
-                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <Activity size={16} className="text-green-500" />
-                  <span>Session Active</span>
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-3xl font-bold text-foreground">Dr. ARIA</h1>
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    <Activity size={12} className="mr-1" />
+                    AI Doctor
+                  </Badge>
+                  {sessionId && (
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                      <Clock size={12} className="mr-1" />
+                      Session Active
+                    </Badge>
+                  )}
                 </div>
-              )}
-              
-              <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
-                <Clock size={16} />
-                <span>24/7</span>
+                <p className="text-muted-foreground">
+                  Intelligent Medical Conversation • Available 24/7 • Personalized for {user?.name || user?.student_id}
+                </p>
               </div>
-              
-              {user && (
-                <div className="text-right">
-                  <div className="font-medium text-gray-800 dark:text-gray-200">{user.name}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{user.student_id}</div>
-                </div>
-              )}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Chat Container */}
-      <div className="max-w-4xl mx-auto p-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 h-[75vh] flex flex-col">
-          
-          {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Chat Card */}
+          <Card className="h-[75vh] flex flex-col">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2">
+                <Heart className="w-5 h-5 text-primary" />
+                Medical Consultation
+              </CardTitle>
+              <CardDescription>
+                Have a natural conversation with Dr. ARIA about your health concerns. Ask questions, describe symptoms, and get medical guidance.
+              </CardDescription>
+            </CardHeader>
+            
+            <CardContent className="flex-1 flex flex-col p-0 min-h-0">
+              {/* Messages Area */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
             {messages.map((message) => (
               <div
                 key={message.id}
                 className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div
-                  className={`max-w-[85%] p-4 rounded-lg border-2 ${
+                <Card className={`w-full max-w-[85%] shadow-sm break-words ${
                     message.sender === 'user'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : getUrgencyColor(message.urgency)
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-2">
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background border-border'
+                  }`}>
+                  <CardContent className="p-5">
+                  <div className="flex items-center gap-2 mb-4">
                     {message.sender === 'user' ? (
-                      <User size={16} />
+                      <User size={16} className="text-primary-foreground" />
                     ) : (
-                      <Bot size={16} className="text-blue-600" />
+                      <Bot size={16} className="text-primary" />
                     )}
-                    <span className="text-xs opacity-70">
+                    <span className="text-xs text-muted-foreground">
                       {message.timestamp.toLocaleTimeString()}
                     </span>
                     {message.urgency === 'emergency' && (
-                      <AlertTriangle size={16} className="text-red-600" />
+                      <AlertTriangle size={16} className="text-destructive" />
                     )}
                     {message.confidence && (
-                      <span className="text-xs opacity-70 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
                         {(message.confidence * 100).toFixed(0)}% confidence
                       </span>
                     )}
                   </div>
                   
-                  <div className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</div>
+                  <div className="prose prose-sm max-w-none overflow-hidden">
+                    <div className="whitespace-pre-wrap text-foreground leading-relaxed break-words">{message.content}</div>
+                  </div>
                   
                   {/* Medical Reasoning */}
                   {message.medical_reasoning && (
-                    <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded text-sm">
-                      <div className="flex items-center gap-2 mb-1">
-                        <CheckCircle2 size={14} className="text-blue-600" />
-                        <strong className="text-blue-800 dark:text-blue-200">Medical Reasoning:</strong>
-                      </div>
-                      <p className="text-blue-700 dark:text-blue-300">{message.medical_reasoning}</p>
-                    </div>
+                    <Card className="mt-4 bg-blue-50/50 border-blue-200 overflow-hidden">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <CheckCircle2 size={16} className="text-blue-600" />
+                          <h4 className="font-semibold text-blue-900">Medical Analysis</h4>
+                        </div>
+                        <p className="text-blue-800 leading-relaxed break-words">{message.medical_reasoning}</p>
+                      </CardContent>
+                    </Card>
                   )}
                   
-                  {/* Follow-up Questions - Now displayed as part of doctor's message, not clickable */}
+                  {/* Follow-up Questions */}
                   {message.follow_up_questions && message.follow_up_questions.length > 0 && (
-                    <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-400 rounded-r text-sm">
-                      <div className="text-blue-800 dark:text-blue-200 space-y-1">
-                        {message.follow_up_questions.map((question, index) => (
-                          <div key={index} className="flex items-start">
-                            <span className="text-blue-600 mr-2">•</span>
-                            <span>{question}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    <Card className="mt-4 bg-amber-50/50 border-amber-200 overflow-hidden">
+                      <CardContent className="p-4">
+                        <h4 className="font-semibold text-amber-900 mb-3">Additional Questions to Consider:</h4>
+                        <div className="space-y-2">
+                          {message.follow_up_questions.map((question, index) => (
+                            <div key={index} className="flex items-start gap-2">
+                              <span className="text-amber-600 mt-1 font-bold flex-shrink-0">•</span>
+                              <span className="text-amber-800 leading-relaxed break-words">{question}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
                   )}
                   
                   {/* Emergency Alert */}
                   {message.requires_immediate_care && (
-                    <div className="mt-3 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-800 dark:text-red-200 text-sm">
-                      <div className="flex items-center gap-2">
-                        <Phone size={14} />
-                        <strong>⚠️ Requires Immediate Medical Attention</strong>
-                      </div>
-                      <p className="mt-1 text-xs">
-                        UMaT Health Center: +233-312-022-242 | Emergency: 193
-                      </p>
-                    </div>
+                    <Card className="mt-4 bg-red-50 border-red-200 border-l-4 border-l-red-500 overflow-hidden">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle size={16} className="text-red-600 flex-shrink-0" />
+                          <h4 className="font-bold text-red-900 break-words">⚠️ Requires Immediate Medical Attention</h4>
+                        </div>
+                        <div className="flex items-start gap-2 text-sm text-red-800">
+                          <Phone size={14} className="flex-shrink-0 mt-0.5" />
+                          <span className="break-words">
+                            <strong>UMaT Health Center:</strong> +233-312-022-242 | <strong>Emergency:</strong> 193
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
                   )}
                   
                   {/* Schedule Appointment Button */}
                   {message.show_appointment_button && sessionId && (
-                    <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <Calendar size={16} className="text-green-600" />
-                            <strong className="text-green-800 dark:text-green-200">Ready to Schedule</strong>
+                    <Card className="mt-4 bg-green-50 border-green-200 overflow-hidden">
+                      <CardContent className="p-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Calendar size={16} className="text-green-600 flex-shrink-0" />
+                              <strong className="text-green-800">Ready to Schedule</strong>
+                            </div>
+                            <p className="text-green-700 text-sm break-words">
+                              Your consultation is complete. Schedule an appointment with a doctor for proper evaluation.
+                            </p>
                           </div>
-                          <p className="text-green-700 dark:text-green-300 text-sm">
-                            Your consultation is complete. Schedule an appointment with a doctor for proper evaluation.
-                          </p>
+                          <Button
+                            onClick={() => handleScheduleAppointment(sessionId)}
+                            disabled={appointmentLoading}
+                            className="bg-green-600 hover:bg-green-700 flex items-center gap-2 text-sm flex-shrink-0"
+                          >
+                            {appointmentLoading ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                                Booking...
+                              </>
+                            ) : (
+                              <>
+                                <Calendar size={16} />
+                                Schedule Appointment
+                              </>
+                            )}
+                          </Button>
                         </div>
-                        <button
-                          onClick={() => handleScheduleAppointment(sessionId)}
-                          disabled={appointmentLoading}
-                          className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
-                        >
-                          {appointmentLoading ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              Booking...
-                            </>
-                          ) : (
-                            <>
-                              <Calendar size={16} />
-                              Schedule Appointment
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
+                      </CardContent>
+                    </Card>
                   )}
                   
                   {/* Choice Buttons - Proceed vs Add Info */}
                   {message.show_choice_buttons && sessionId && (
-                    <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded">
-                      <div className="text-center">
-                        <div className="flex items-center justify-center gap-2 mb-3">
-                          <CheckCircle2 size={16} className="text-blue-600" />
-                          <strong className="text-blue-800 dark:text-blue-200">What would you like to do?</strong>
+                    <Card className="mt-4 bg-blue-50 border-blue-200 overflow-hidden">
+                      <CardContent className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-2 mb-4">
+                          <CheckCircle2 size={16} className="text-blue-600 flex-shrink-0" />
+                          <strong className="text-blue-800">What would you like to do?</strong>
                         </div>
-                        <div className="flex gap-3 justify-center">
-                          <button
+                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                          <Button
                             onClick={() => handleUserChoice('proceed')}
                             disabled={loading}
-                            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                            className="bg-green-600 hover:bg-green-700 flex items-center gap-2 text-sm"
                           >
                             <CheckCircle2 size={16} />
                             Proceed with Assessment
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             onClick={() => handleUserChoice('add_info')}
                             disabled={loading}
-                            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                            className="flex items-center gap-2 text-sm"
                           >
                             <Send size={16} />
                             Add More Information
-                          </button>
+                          </Button>
                         </div>
-                      </div>
-                    </div>
+                      </CardContent>
+                    </Card>
                   )}
-                </div>
+                  </CardContent>
+                </Card>
               </div>
             ))}
             
-            {loading && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-600">
-                  <div className="flex items-center gap-2">
-                    <Bot size={16} className="text-blue-600" />
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                      <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                    </div>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Dr. ARIA is thinking...</span>
+                {loading && (
+                  <div className="flex justify-start">
+                    <Card className="bg-muted border-muted-foreground/20">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-2">
+                          <Bot size={16} className="text-primary" />
+                          <div className="flex gap-1">
+                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                          </div>
+                          <span className="text-sm text-muted-foreground">Dr. ARIA is thinking...</span>
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
+                )}
+                
+                <div ref={messagesEndRef} />
+              </div>
+              
+              {/* Input Area */}
+              <div className="p-4 border-t border-border">
+                <div className="flex gap-2">
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Tell me more about your symptoms..."
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+                    disabled={loading}
+                    className="flex-1 p-3 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background text-foreground"
+                  />
+                  <Button 
+                    onClick={handleSendMessage} 
+                    disabled={loading || !input.trim()}
+                    className="px-6 py-3 flex items-center gap-2"
+                  >
+                    <Send size={18} />
+                    Send
+                  </Button>
+                </div>
+                
+                <div className="mt-3 text-xs text-muted-foreground text-center">
+                  <p>🩺 Dr. ARIA uses conversation memory and medical knowledge to provide personalized guidance.</p>
+                  <p>This is AI-powered medical assistance and not a replacement for professional medical care.</p>
                 </div>
               </div>
-            )}
-            
-            <div ref={messagesEndRef} />
-          </div>
-          
-          {/* Input Area */}
-          <div className="p-4 border-t border-gray-200 dark:border-gray-600">
-            <div className="flex gap-2">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Tell me more about your symptoms..."
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-                disabled={loading}
-                className="flex-1 p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-              />
-              <button 
-                onClick={handleSendMessage} 
-                disabled={loading || !input.trim()}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg transition-colors flex items-center gap-2"
-              >
-                <Send size={18} />
-                Send
-              </button>
-            </div>
-            
-            <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 text-center">
-              <p>🩺 Dr. ARIA uses conversation memory and medical knowledge to provide personalized guidance.</p>
-              <p>This is AI-powered medical assistance and not a replacement for professional medical care.</p>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
-      </div>
+      </main>
 
-      {/* Modern Appointment Booking Modal */}
-      {showAppointmentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Calendar className="text-blue-600" size={24} />
-                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">Book Your Appointment</h2>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowAppointmentModal(false);
-                    setSelectedAppointment(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
+      {/* Appointment Booking Dialog */}
+      <Dialog open={showAppointmentModal} onOpenChange={setShowAppointmentModal}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="text-primary" size={24} />
+              Book Your Appointment
+            </DialogTitle>
+            <DialogDescription>
+              Schedule an appointment based on your consultation with Dr. ARIA
+            </DialogDescription>
+          </DialogHeader>
 
-            {/* Assessment Summary */}
-            {assessmentSummary && (
-              <div className="p-6 bg-blue-50 dark:bg-blue-900/20 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">Medical Assessment Summary</h3>
-                <div className="text-sm text-blue-700 dark:text-blue-300">
+          {/* Assessment Summary */}
+          {assessmentSummary && (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="text-lg">Medical Assessment Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 text-sm">
                   <p><strong>Severity Score:</strong> {assessmentSummary.severity_score}/100</p>
                   <p><strong>Priority Level:</strong> {assessmentSummary.priority_level?.replace('_', ' ').toUpperCase()}</p>
                   <p><strong>Recommended Care:</strong> {assessmentSummary.severity_level?.toUpperCase()}</p>
                 </div>
-              </div>
-            )}
+              </CardContent>
+            </Card>
+          )}
 
-            {/* Available Times */}
-            <div className="p-6">
-              <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-4">Available Appointment Times</h3>
+          {/* Available Times */}
+          <div className="space-y-4">
+            <h3 className="font-semibold text-foreground">Available Appointment Times</h3>
               
-              {appointmentTimes.length === 0 ? (
-                <div className="text-center py-8">
-                  <Calendar className="mx-auto text-gray-400 mb-4" size={48} />
-                  <p className="text-gray-500">No appointment times available</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {appointmentTimes.map((time, index) => (
-                    <div
-                      key={index}
-                      onClick={() => setSelectedAppointment(time)}
-                      className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedAppointment === time
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
-                          : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-400'
-                      }`}
-                    >
+            {appointmentTimes.length === 0 ? (
+              <Card className="p-8 text-center">
+                <Calendar className="mx-auto text-muted-foreground mb-4" size={48} />
+                <p className="text-muted-foreground">No appointment times available</p>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {appointmentTimes.map((time, index) => (
+                  <Card
+                    key={index}
+                    onClick={() => setSelectedAppointment(time)}
+                    className={`cursor-pointer transition-all hover:shadow-md ${
+                      selectedAppointment === time
+                        ? 'border-primary bg-primary/5'
+                        : 'hover:border-primary/50'
+                    }`}
+                  >
+                    <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium text-gray-800 dark:text-gray-200">
+                          <div className="font-medium text-foreground">
                             {time.time}
                           </div>
                           {time.doctor && (
-                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                            <div className="text-sm text-muted-foreground">
                               Dr. {time.doctor}
                             </div>
                           )}
                           {time.room && (
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-muted-foreground">
                               Room {time.room}
                             </div>
                           )}
                           {time.type && (
                             <div className="text-xs mt-1">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                time.type === 'emergency' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                                time.type === 'same_day' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
-                                time.type === 'urgent' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                                'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                              }`}>
+                              <Badge variant={
+                                time.type === 'emergency' ? 'destructive' :
+                                time.type === 'same_day' ? 'secondary' :
+                                time.type === 'urgent' ? 'outline' :
+                                'default'
+                              } className="text-xs">
                                 {time.type.replace('_', ' ').toUpperCase()}
-                              </span>
+                              </Badge>
                             </div>
                           )}
                         </div>
                         {selectedAppointment === time && (
-                          <CheckCircle2 className="text-blue-600" size={24} />
+                          <CheckCircle2 className="text-primary" size={24} />
                         )}
                       </div>
                       {time.note && (
-                        <div className="mt-2 text-sm text-red-600 dark:text-red-400 font-medium">
+                        <div className="mt-2 text-sm text-destructive font-medium">
                           {time.note}
                         </div>
                       )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-xl">
-              <div className="flex gap-3 justify-end">
-                <button
-                  onClick={() => {
-                    setShowAppointmentModal(false);
-                    setSelectedAppointment(null);
-                  }}
-                  className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleBookSelectedAppointment}
-                  disabled={!selectedAppointment || appointmentLoading}
-                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors flex items-center gap-2"
-                >
-                  {appointmentLoading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Booking...
-                    </>
-                  ) : (
-                    <>
-                      <Calendar size={16} />
-                      Book Appointment
-                    </>
-                  )}
-                </button>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
-              
-              {selectedAppointment && (
-                <div className="mt-4 p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                  <div className="text-sm text-blue-800 dark:text-blue-200">
-                    <strong>Selected:</strong> {selectedAppointment.time}
-                    {selectedAppointment.doctor && ` with Dr. ${selectedAppointment.doctor}`}
-                    {selectedAppointment.room && ` in Room ${selectedAppointment.room}`}
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
           </div>
-        </div>
-      )}
+
+          {/* Modal Footer */}
+          <div className="flex gap-3 justify-end pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAppointmentModal(false);
+                setSelectedAppointment(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBookSelectedAppointment}
+              disabled={!selectedAppointment || appointmentLoading}
+              className="flex items-center gap-2"
+            >
+              {appointmentLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                  Booking...
+                </>
+              ) : (
+                <>
+                  <Calendar size={16} />
+                  Book Appointment
+                </>
+              )}
+            </Button>
+          </div>
+          
+          {selectedAppointment && (
+            <Card className="mt-4">
+              <CardContent className="p-3">
+                <div className="text-sm">
+                  <strong>Selected:</strong> {selectedAppointment.time}
+                  {selectedAppointment.doctor && ` with Dr. ${selectedAppointment.doctor}`}
+                  {selectedAppointment.room && ` in Room ${selectedAppointment.room}`}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
