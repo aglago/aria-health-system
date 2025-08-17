@@ -6,7 +6,7 @@ Phase 2: Conversational AI with clean architecture
 import json
 import logging
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 import os
 import uuid
@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 # Import our services
 from ..services.rag_service import rag_service
+from .medical_severity_scorer import medical_severity_scorer, SeverityLevel, PriorityLevel
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -154,6 +155,7 @@ class IntelligentDoctor:
         )
         session.messages.append(doctor_msg)
         
+        
         logger.info(f"🩺 Continued intelligent consultation: {session_id}")
         return response
     
@@ -179,7 +181,8 @@ class IntelligentDoctor:
                 response = self._generate_fallback_response(
                     current_message, 
                     medical_context,
-                    conversation_context
+                    conversation_context,
+                    session.session_id
                 )
             
             # Step 4: Assess urgency and confidence
@@ -321,7 +324,7 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
             logger.error(f"❌ LLM generation failed: {e}")
             return self._generate_fallback_response(user_message, medical_context, conversation_context)
     
-    def _generate_fallback_response(self, user_message: str, medical_context: str, conversation_context: Optional[str] = None) -> Dict:
+    def _generate_fallback_response(self, user_message: str, medical_context: str, conversation_context: Optional[str] = None, session_id: Optional[str] = None) -> Dict:
         """Context-aware fallback response when LLM is not available"""
         message_lower = user_message.lower()
         
@@ -357,8 +360,8 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
         # Handle treatment/medication responses
         elif any(treatment in message_lower for treatment in ["tried", "taken", "medication", "treatment", "nothing", "haven't"]):
             if is_ongoing_conversation:
-                message = f"I understand about the treatments - {user_message}. Now, are there any other symptoms you're experiencing along with this, or anything that makes it feel better or worse?"
-                questions = []  # Wait for their answer about additional symptoms/triggers
+                message = f"I understand about the treatments - {user_message}. Is there anything else about your symptoms you'd like me to know, or would you like me to complete my assessment based on what you've shared?"
+                questions = []
             else:
                 message = f"Thank you for sharing that treatment information. Can you describe your main symptoms in detail?"
                 questions = []
@@ -380,20 +383,29 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
         # Context-aware default response
         else:
             if is_ongoing_conversation:
-                # Try to determine what information we might still need
-                message_count = conversation_context.count("Patient:") if conversation_context else 0
-                if message_count <= 2:
-                    message = f"Thank you for that information: '{user_message}'. To complete my assessment, is there anything else about your symptoms that you think I should know?"
+                # Check if user is indicating they're done (saying "no" repeatedly)
+                if user_message.lower().strip() in ["no", "nothing", "nothing else", "that's all", "that's it", "nooo", "nope"]:
+                    # Count how many times we've asked if there's anything else
+                    anything_else_count = conversation_context.count("Is there anything else about your symptoms") if conversation_context else 0
+                    
+                    if anything_else_count >= 1:  # If we already asked "anything else" before
+                        message = "Thank you for all the information you've shared. I believe I have enough details to help assess your condition. To complete my evaluation, I recommend using our assessment feature which will provide you with a comprehensive analysis and help schedule an appropriate appointment if needed."
+                        questions = []
+                    else:
+                        # First time asking - give one final chance
+                        message = "I understand. Is there anything else about your symptoms you'd like me to know, or shall we proceed with the assessment?"
+                        questions = []
                 else:
-                    message = f"Thank you for providing that additional information. Based on everything you've told me, let me provide you with my assessment and recommendations."
-                questions = []  # Let user provide final details or wait for assessment
+                    # For any other response in ongoing conversation
+                    message = f"Thank you for that information: '{user_message}'. Based on what you've shared, I have a good understanding of your situation. Is there anything else you'd like to add about your symptoms?"
+                    questions = []
             else:
                 message = f"I understand you mentioned: '{user_message}'. Can you tell me more details about what you're experiencing?"
                 questions = []
         
         return {
             "message": message,
-            "follow_up_questions": questions,
+            "follow_up_questions": questions if 'questions' in locals() else [],
             "reasoning": "Generated using medical context analysis and conversation-aware symptom recognition"
         }
     
@@ -517,6 +529,132 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
                 for sid, session in self.sessions.items()
             ]
         }
+    
+    def perform_medical_assessment(self, session_id: str) -> Dict:
+        """
+        Perform comprehensive medical assessment and generate doctor scheduling
+        """
+        try:
+            if session_id not in self.sessions:
+                return {"error": f"Session not found: {session_id}"}
+            
+            session = self.sessions[session_id]
+            
+            # Convert session messages to format expected by severity scorer
+            messages = []
+            for msg in session.messages:
+                messages.append({
+                    "role": msg.role,
+                    "message": msg.message,
+                    "timestamp": msg.timestamp.isoformat()
+                })
+            
+            # Perform severity assessment
+            logger.info(f"🔬 Performing medical assessment for session: {session_id}")
+            assessment = medical_severity_scorer.analyze_conversation(messages)
+            
+            # Generate appointment scheduling info
+            appointment_info = self._generate_appointment_info(assessment, session.user_id)
+            
+            # Create comprehensive response
+            response = {
+                "assessment_complete": True,
+                "severity_assessment": {
+                    "severity_score": assessment.severity_score,
+                    "severity_level": assessment.severity_level.value,
+                    "priority_level": assessment.priority_level.value,
+                    "risk_factors": assessment.risk_factors,
+                    "possible_conditions": assessment.possible_conditions,
+                    "emergency_indicators": assessment.emergency_indicators,
+                    "clinical_reasoning": assessment.clinical_reasoning
+                },
+                "appointment_info": appointment_info,
+                "doctor_briefing": assessment.doctor_briefing,
+                "session_id": session_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            logger.info(f"✅ Medical assessment completed: {assessment.severity_score}/100 ({assessment.severity_level.value})")
+            return response
+            
+        except Exception as e:
+            logger.error(f"❌ Error in medical assessment: {e}")
+            return {
+                "error": "Assessment system temporarily unavailable",
+                "fallback_message": "Please contact UMaT Health Services directly for immediate assistance.",
+                "emergency_contacts": {
+                    "UMaT Health Center": "+233-312-022-242",
+                    "Emergency Services": "193"
+                }
+            }
+    
+    def _generate_appointment_info(self, assessment, user_id: str) -> Dict:
+        """Generate appointment scheduling information"""
+        try:
+            # Determine appointment timing based on priority
+            priority_timing = {
+                PriorityLevel.EMERGENCY: {"timeframe": "Immediate", "note": "Go to emergency room now"},
+                PriorityLevel.HIGH_PRIORITY: {"timeframe": "Today", "note": "Same-day appointment scheduled"},
+                PriorityLevel.URGENT: {"timeframe": "Tomorrow", "note": "Next-day appointment"},
+                PriorityLevel.ROUTINE: {"timeframe": "This week", "note": "Routine appointment"}
+            }
+            
+            timing = priority_timing.get(assessment.priority_level, priority_timing[PriorityLevel.URGENT])
+            
+            # Generate mock doctor assignment (in real system, this would check actual availability)
+            doctors = [
+                {"name": "Dr. Kwame Asante", "specialty": "General Medicine", "room": "204"},
+                {"name": "Dr. Ama Osei", "specialty": "Internal Medicine", "room": "106"},
+                {"name": "Dr. Kofi Mensah", "specialty": "Family Medicine", "room": "301"}
+            ]
+            
+            assigned_doctor = doctors[hash(user_id) % len(doctors)]  # Consistent assignment
+            
+            # Generate appointment time
+            if assessment.priority_level == PriorityLevel.EMERGENCY:
+                appointment_time = "Immediate - Go to Emergency Room"
+            else:
+                now = datetime.now()
+                if assessment.priority_level == PriorityLevel.HIGH_PRIORITY:
+                    appointment_time = (now + timedelta(hours=2)).strftime("%I:%M %p today")
+                elif assessment.priority_level == PriorityLevel.URGENT:
+                    appointment_time = (now.replace(hour=9, minute=0) + timedelta(days=1)).strftime("%I:%M %p tomorrow")
+                else:
+                    appointment_time = (now.replace(hour=10, minute=0) + timedelta(days=3)).strftime("%I:%M %p on %A")
+            
+            return {
+                "status": "scheduled",
+                "appointment": {
+                    "reference_id": f"ARIA-{datetime.now().strftime('%Y%m%d')}-{user_id.replace('/', '_')}",
+                    "doctor": assigned_doctor,
+                    "time": appointment_time,
+                    "duration": "30 minutes",
+                    "location": "UMaT Health Center",
+                    "priority": assessment.priority_level.value.replace("_", " ").title()
+                },
+                "preparation": {
+                    "bring_items": ["Student ID", "Any medications you're currently taking"],
+                    "preparation_notes": [
+                        "Doctor has been briefed on your condition",
+                        "Arrive 10 minutes early for check-in",
+                        "Bring list of current medications/allergies"
+                    ]
+                },
+                "contact_info": {
+                    "health_center": "+233-312-022-242",
+                    "emergency": "193",
+                    "appointment_changes": "+233-312-022-245"
+                },
+                "severity_context": timing
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error generating appointment info: {e}")
+            return {
+                "status": "error",
+                "message": "Unable to schedule at this time. Please call UMaT Health Center directly.",
+                "phone": "+233-312-022-242"
+            }
 
 # Global intelligent doctor instance
 intelligent_doctor = IntelligentDoctor()

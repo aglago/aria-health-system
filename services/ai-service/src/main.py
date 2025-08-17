@@ -391,6 +391,104 @@ async def resume_or_start_conversation(request: DoctorStartRequest):
             detail="Error with conversation management. If this is an emergency, seek immediate medical attention."
         )
 
+@app.post("/doctor/end")
+async def end_doctor_conversation_and_assess(request: DoctorContinueRequest):
+    """
+    End doctor conversation and perform comprehensive medical assessment with scheduling
+    """
+    try:
+        logger.info(f"🏁 Ending doctor conversation and starting assessment: {request.session_id}")
+        
+        # Add final user message if provided
+        if request.message and request.message.strip():
+            intelligent_doctor.continue_conversation(request.session_id, request.message)
+        
+        # Perform medical assessment
+        assessment_result = intelligent_doctor.perform_medical_assessment(request.session_id)
+        
+        if "error" in assessment_result:
+            raise HTTPException(status_code=404, detail=assessment_result["error"])
+        
+        # Generate comprehensive final response
+        assessment = assessment_result['severity_assessment']
+        appointment = assessment_result['appointment_info']
+        
+        # Create detailed assessment message
+        assessment_message = f"""✅ **Medical Assessment Complete**
+
+**Your Health Assessment:**
+• **Severity Score:** {assessment['severity_score']}/100 ({assessment['severity_level'].title()})
+• **Priority Level:** {assessment['priority_level'].replace('_', ' ').title()}
+• **Possible Conditions:** {', '.join(assessment['possible_conditions'][:3])}
+
+**📅 Appointment Scheduled:**"""
+        
+        if appointment['status'] == 'scheduled':
+            appt = appointment['appointment']
+            assessment_message += f"""
+• **Doctor:** {appt['doctor']['name']} ({appt['doctor']['specialty']})
+• **Time:** {appt['time']}
+• **Location:** {appt['location']}, Room {appt['doctor']['room']}
+• **Reference ID:** {appt['reference_id']}
+
+**📋 Preparation:**
+• {chr(10).join(['• ' + item for item in appointment['preparation']['preparation_notes']])}
+
+**📞 Contact Information:**
+• Health Center: {appointment['contact_info']['health_center']}
+• Emergency: {appointment['contact_info']['emergency']}"""
+        else:
+            assessment_message += f"""
+• **Status:** {appointment.get('message', 'Please contact health center directly')}
+• **Phone:** {appointment.get('phone', '+233-312-022-242')}"""
+        
+        return DoctorResponseModel(
+            session_id=request.session_id,
+            doctor_response=assessment_message,
+            follow_up_questions=[],
+            urgency_level=assessment['severity_level'],
+            requires_immediate_care=assessment['severity_level'] == 'emergency',
+            confidence=0.95,  # High confidence in assessment
+            medical_reasoning=assessment['clinical_reasoning'],
+            timestamp=datetime.now().isoformat()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in end conversation assessment: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Medical assessment system temporarily unavailable. Please contact UMaT Health Services directly."
+        )
+
+@app.post("/doctor/assess/{session_id}")
+async def perform_medical_assessment(session_id: str):
+    """
+    Perform comprehensive medical assessment and generate doctor scheduling
+    """
+    try:
+        logger.info(f"🔬 Medical assessment requested for session: {session_id}")
+        
+        assessment_result = intelligent_doctor.perform_medical_assessment(session_id)
+        
+        if "error" in assessment_result:
+            raise HTTPException(status_code=404, detail=assessment_result["error"])
+        
+        return {
+            "status": "success",
+            "assessment": assessment_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in medical assessment endpoint: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Medical assessment system temporarily unavailable. Please contact UMaT Health Services directly."
+        )
+
 # =============================================================================
 # RAG AND KNOWLEDGE BASE ENDPOINTS
 # =============================================================================

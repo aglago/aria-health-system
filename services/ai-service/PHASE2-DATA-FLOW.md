@@ -10,21 +10,27 @@ Complete data flow analysis for Phase 2: Core ML + Conversational Doctor AI
 │   (Web/Mobile)  │────│   (Next.js)     │────│   (FastAPI)     │
 │                 │    │                 │    │                 │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │                       │
-                                │              ┌─────────────────┐
-                                │              │   ML Engine     │
-                                │              │ ml_medical_ai   │
-                                │              └─────────────────┘
-                                │                       │
-                                │              ┌─────────────────┐
-                                │              │ Intelligent     │
-                                │              │ Doctor Service  │
-                                │              └─────────────────┘
-                                │                       │
-                                │              ┌─────────────────┐
-                                └──────────────│  RAG Service    │
-                                               │ Medical KB      │
-                                               └─────────────────┘
+                                                        │
+                        ┌───────────────────────────────┼───────────────────────────────┐
+                        │                               │                               │
+                        ▼                               ▼                               ▼
+            ┌─────────────────┐              ┌─────────────────┐              ┌─────────────────┐
+            │   ML Engine     │              │ Intelligent     │              │  RAG Service    │
+            │ ml_medical_ai   │              │ Doctor Service  │◄─────────────│ Medical KB      │
+            │(Direct Analysis)│              │                 │              │ (Knowledge Base)│
+            └─────────────────┘              └─────────────────┘              └─────────────────┘
+                                                      │                                  ▲
+                                                      ▼                                  │
+                                              ┌─────────────────┐                        │
+                                              │ Medical         │────────────────────────┘
+                                              │ Severity Scorer │
+                                              └─────────────────┘
+                                                      │
+                                                      ▼
+                                              ┌─────────────────┐
+                                              │Doctor Scheduling│
+                                              │ & Briefing      │
+                                              └─────────────────┘
 ```
 
 ## **Phase 2 Data Flow Scenarios**
