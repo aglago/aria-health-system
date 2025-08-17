@@ -211,7 +211,7 @@ export default function DoctorChat() {
     if (!sessionId) return;
     
     // Send the choice as a message to continue the conversation
-    const choiceMessage = choice === 'proceed' ? 'no' : 'I want to add more information';
+    const choiceMessage = choice === 'proceed' ? 'proceed with assessment' : 'I want to add more information';
     
     // Create user message for the choice
     const userMessage: DoctorMessage = {
