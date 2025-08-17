@@ -53,6 +53,10 @@ export default function DoctorChat() {
   const [user, setUser] = useState<UserData | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [appointmentLoading, setAppointmentLoading] = useState(false);
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [appointmentTimes, setAppointmentTimes] = useState<any[]>([]);
+  const [assessmentSummary, setAssessmentSummary] = useState<any>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   
@@ -277,6 +281,69 @@ export default function DoctorChat() {
     }
   };
 
+  const handleBookSelectedAppointment = async () => {
+    if (!selectedAppointment || !sessionId) return;
+    
+    setAppointmentLoading(true);
+    
+    try {
+      // Book the appointment
+      const bookingResponse = await fetch('/api/aria/doctor/book-appointment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          selected_time: selectedAppointment,
+          user_contact: {
+            student_id: user?.student_id,
+            email: user?.student_id ? `${user.student_id}@umat.edu.gh` : undefined
+          }
+        })
+      });
+      
+      if (!bookingResponse.ok) {
+        throw new Error(`Booking failed: ${bookingResponse.status}`);
+      }
+      
+      const bookingData = await bookingResponse.json();
+      
+      // Show booking confirmation
+      const confirmation = bookingData.booking;
+      if (confirmation && confirmation.booking_confirmed) {
+        const confirmationMessage: DoctorMessage = {
+          id: Date.now().toString(),
+          content: `✅ **APPOINTMENT BOOKED SUCCESSFULLY!**\n\n📅 **Appointment Details:**\n• **Doctor:** ${confirmation.booking_details.doctor}\n• **Time:** ${confirmation.booking_details.appointment_time}\n• **Location:** ${confirmation.booking_details.location}\n• **Room:** ${confirmation.booking_details.room}\n• **Duration:** ${confirmation.booking_details.duration}\n• **Booking ID:** ${confirmation.booking_details.booking_id}\n\n📋 **What to bring:**\n${confirmation.patient_preparation.bring_items.map((item: string) => `• ${item}`).join('\n')}\n\n📞 **Contact Information:**\n• Health Center: ${confirmation.contact_info.health_center}\n• Emergency: ${confirmation.contact_info.emergency}\n• Appointment Changes: ${confirmation.contact_info.appointment_changes}\n\n**Please arrive 10 minutes early for check-in.**`,
+          sender: 'doctor',
+          timestamp: new Date(),
+          urgency: 'low'
+        };
+        
+        setMessages(prev => [...prev, confirmationMessage]);
+        
+        // Close modal and reset state
+        setShowAppointmentModal(false);
+        setSelectedAppointment(null);
+        setAppointmentTimes([]);
+        setAssessmentSummary(null);
+      }
+      
+    } catch (error) {
+      console.error('❌ Appointment booking error:', error);
+      
+      const errorMessage: DoctorMessage = {
+        id: Date.now().toString(),
+        content: `❌ **Appointment Booking Failed**\n\nI'm sorry, but there was an issue scheduling your appointment. Please contact UMaT Health Center directly to book your appointment.\n\n📞 **Contact Information:**\n• UMaT Health Center: +233-312-022-242\n• Appointment Booking: +233-312-022-245\n\nThey will be able to assist you with scheduling based on your consultation.`,
+        sender: 'doctor',
+        timestamp: new Date(),
+        urgency: 'medium'
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setAppointmentLoading(false);
+    }
+  };
+
   const handleScheduleAppointment = async (sessionId: string) => {
     if (!sessionId) return;
     
@@ -302,13 +369,6 @@ export default function DoctorChat() {
           };
           
           setMessages(prev => [...prev, sessionExpiredMessage]);
-          
-          alert(
-            "⚠️ Session Expired\n\n" +
-            "Your consultation session has expired.\n" +
-            "Please start a new consultation or call:\n" +
-            "+233-312-022-242"
-          );
           return;
         }
         
@@ -319,67 +379,10 @@ export default function DoctorChat() {
       
       console.log('✅ Available times received:', timesData);
       
-      // Show appointment times to user (simplified for now)
-      const appointmentOptions = timesData.available_times.map((time: any, index: number) => 
-        `${index + 1}. ${time.time}${time.doctor ? ` - ${time.doctor}` : ''}${time.room ? ` (Room ${time.room})` : ''}`
-      ).join('\n');
-      
-      const selection = prompt(
-        `📅 AVAILABLE APPOINTMENT TIMES\n\n` +
-        `Assessment: ${timesData.assessment_summary.severity_score}/100 (${timesData.assessment_summary.priority_level})\n\n` +
-        `Available appointments:\n${appointmentOptions}\n\n` +
-        `Enter the number of your preferred appointment time:`
-      );
-      
-      if (selection && !isNaN(parseInt(selection))) {
-        const selectedIndex = parseInt(selection) - 1;
-        const selectedTime = timesData.available_times[selectedIndex];
-        
-        if (selectedTime) {
-          // Book the appointment
-          const bookingResponse = await fetch('/api/aria/doctor/book-appointment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              session_id: sessionId,
-              selected_time: selectedTime,
-              user_contact: {
-                student_id: user?.student_id,
-                email: user?.student_id ? `${user.student_id}@umat.edu.gh` : undefined
-              }
-            })
-          });
-          
-          if (!bookingResponse.ok) {
-            throw new Error(`Booking failed: ${bookingResponse.status}`);
-          }
-          
-          const bookingData = await bookingResponse.json();
-          
-          // Show booking confirmation
-          const confirmation = bookingData.booking;
-          if (confirmation && confirmation.booking_confirmed) {
-            const confirmationMessage: DoctorMessage = {
-              id: Date.now().toString(),
-              content: `✅ **APPOINTMENT BOOKED SUCCESSFULLY!**\n\n📅 **Appointment Details:**\n• **Doctor:** ${confirmation.booking_details.doctor}\n• **Time:** ${confirmation.booking_details.appointment_time}\n• **Location:** ${confirmation.booking_details.location}\n• **Room:** ${confirmation.booking_details.room}\n• **Duration:** ${confirmation.booking_details.duration}\n• **Booking ID:** ${confirmation.booking_details.booking_id}\n\n📋 **What to bring:**\n${confirmation.patient_preparation.bring_items.map((item: string) => `• ${item}`).join('\n')}\n\n📞 **Contact Information:**\n• Health Center: ${confirmation.contact_info.health_center}\n• Emergency: ${confirmation.contact_info.emergency}\n• Appointment Changes: ${confirmation.contact_info.appointment_changes}\n\n**Please arrive 10 minutes early for check-in.**`,
-              sender: 'doctor',
-              timestamp: new Date(),
-              urgency: 'low'
-            };
-            
-            setMessages(prev => [...prev, confirmationMessage]);
-            
-            alert(
-              `✅ APPOINTMENT CONFIRMED!\n\n` +
-              `Doctor: ${confirmation.booking_details.doctor}\n` +
-              `Time: ${confirmation.booking_details.appointment_time}\n` +
-              `Location: ${confirmation.booking_details.location}\n` +
-              `Booking ID: ${confirmation.booking_details.booking_id}\n\n` +
-              `Please arrive 10 minutes early.`
-            );
-          }
-        }
-      }
+      // Set data for modal and show it
+      setAppointmentTimes(timesData.available_times);
+      setAssessmentSummary(timesData.assessment_summary);
+      setShowAppointmentModal(true);
       
     } catch (error) {
       console.error('❌ Appointment booking error:', error);
@@ -393,13 +396,6 @@ export default function DoctorChat() {
       };
       
       setMessages(prev => [...prev, errorMessage]);
-      
-      alert(
-        "❌ Booking Error\n\n" +
-        "Unable to complete appointment booking.\n" +
-        "Please call UMaT Health Center directly:\n" +
-        "+233-312-022-242"
-      );
     } finally {
       setAppointmentLoading(false);
     }
@@ -672,6 +668,152 @@ export default function DoctorChat() {
           </div>
         </div>
       </div>
+
+      {/* Modern Appointment Booking Modal */}
+      {showAppointmentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Calendar className="text-blue-600" size={24} />
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">Book Your Appointment</h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowAppointmentModal(false);
+                    setSelectedAppointment(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Assessment Summary */}
+            {assessmentSummary && (
+              <div className="p-6 bg-blue-50 dark:bg-blue-900/20 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">Medical Assessment Summary</h3>
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  <p><strong>Severity Score:</strong> {assessmentSummary.severity_score}/100</p>
+                  <p><strong>Priority Level:</strong> {assessmentSummary.priority_level?.replace('_', ' ').toUpperCase()}</p>
+                  <p><strong>Recommended Care:</strong> {assessmentSummary.severity_level?.toUpperCase()}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Available Times */}
+            <div className="p-6">
+              <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-4">Available Appointment Times</h3>
+              
+              {appointmentTimes.length === 0 ? (
+                <div className="text-center py-8">
+                  <Calendar className="mx-auto text-gray-400 mb-4" size={48} />
+                  <p className="text-gray-500">No appointment times available</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {appointmentTimes.map((time, index) => (
+                    <div
+                      key={index}
+                      onClick={() => setSelectedAppointment(time)}
+                      className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                        selectedAppointment === time
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
+                          : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium text-gray-800 dark:text-gray-200">
+                            {time.time}
+                          </div>
+                          {time.doctor && (
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              Dr. {time.doctor}
+                            </div>
+                          )}
+                          {time.room && (
+                            <div className="text-xs text-gray-500">
+                              Room {time.room}
+                            </div>
+                          )}
+                          {time.type && (
+                            <div className="text-xs mt-1">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                time.type === 'emergency' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                                time.type === 'same_day' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
+                                time.type === 'urgent' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                                'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                              }`}>
+                                {time.type.replace('_', ' ').toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        {selectedAppointment === time && (
+                          <CheckCircle2 className="text-blue-600" size={24} />
+                        )}
+                      </div>
+                      {time.note && (
+                        <div className="mt-2 text-sm text-red-600 dark:text-red-400 font-medium">
+                          {time.note}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-xl">
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setShowAppointmentModal(false);
+                    setSelectedAppointment(null);
+                  }}
+                  className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBookSelectedAppointment}
+                  disabled={!selectedAppointment || appointmentLoading}
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {appointmentLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Booking...
+                    </>
+                  ) : (
+                    <>
+                      <Calendar size={16} />
+                      Book Appointment
+                    </>
+                  )}
+                </button>
+              </div>
+              
+              {selectedAppointment && (
+                <div className="mt-4 p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <div className="text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Selected:</strong> {selectedAppointment.time}
+                    {selectedAppointment.doctor && ` with Dr. ${selectedAppointment.doctor}`}
+                    {selectedAppointment.room && ` in Room ${selectedAppointment.room}`}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
