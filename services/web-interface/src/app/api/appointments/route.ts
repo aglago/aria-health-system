@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
-import User from '@/models/User';
 import { verifyToken } from '@/lib/auth/jwt';
+import { assignDoctor } from '@/lib/doctor-assignment';
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,6 +31,8 @@ export async function GET(request: NextRequest) {
     if (role === 'student') {
       query.patient_id = userId;
     } else if (role === 'doctor') {
+      // For doctors, userId in JWT is actually the doctor_id
+      // So we can directly use it to filter appointments
       query.doctor_id = userId;
     } else {
       return NextResponse.json({ error: 'Invalid role' }, { status: 403 });
@@ -42,26 +44,62 @@ export async function GET(request: NextRequest) {
     }
 
     const appointments = await Appointment.find(query)
-      .populate('patient', 'name student_id email phone')
-      .populate('doctor', 'name doctor_id email')
       .sort({ date: 1 })
       .lean();
 
-    console.log('📋 Appointments fetched:', {
-      user_id: userId,
-      role: role,
-      query: query,
-      appointments_count: appointments.length,
-      appointments: appointments.map(apt => ({
-        id: apt._id,
-        patient_id: apt.patient_id,
-        doctor_name: apt.doctor_name,
-        date: apt.date,
-        time: apt.time
-      }))
-    });
+    // Manually populate patient and doctor data since we're using string references
+    const User = (await import('@/models/User')).default;
+    
+    const populatedAppointments = await Promise.all(
+      appointments.map(async (appointment: any) => {
+        // Find patient by student_id
+        const patient = await User.findOne({ student_id: appointment.patient_id });
+        if (patient) {
+          appointment.patient = {
+            name: patient.name,
+            student_id: patient.student_id,
+            email: patient.email,
+            phone: patient.phone
+          };
+        }
+        
+        // Find doctor by doctor_id  
+        const doctor = await User.findOne({ doctor_id: appointment.doctor_id });
+        if (doctor) {
+          appointment.doctor = {
+            name: doctor.name,
+            doctor_id: doctor.doctor_id,
+            email: doctor.email,
+            specialization: doctor.specialization
+          };
+        }
+        
+        return appointment;
+      })
+    );
 
-    return NextResponse.json({ appointments });
+    // console.log('📋 Appointments fetched:', {
+    //   user_id: userId,
+    //   role: role,
+    //   query: query,
+    //   appointments_count: populatedAppointments.length,
+    //   appointments: populatedAppointments.map(apt => ({
+    //     id: apt._id,
+    //     patient_id: apt.patient_id,
+    //     patient_name: apt.patient?.name,
+    //     doctor_name: apt.doctor_name || apt.doctor?.name,
+    //     date: apt.date,
+    //     time: apt.time
+    //   }))
+    // });
+
+    // Transform _id to id for frontend compatibility
+    const transformedAppointments = populatedAppointments.map((apt: any) => ({
+      ...apt,
+      id: apt._id.toString()
+    }));
+
+    return NextResponse.json({ appointments: transformedAppointments });
 
   } catch (error) {
     console.error('Error fetching appointments:', error);
@@ -94,26 +132,38 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
 
     const body = await request.json();
-    const { date, time, type, doctor_name, notes, consultation_id, symptoms, urgency_level } = body;
+    const { date, time, type, notes, consultation_id, symptoms, urgency_level, appointment_type } = body;
 
     // Validate required fields
-    if (!date || !time || !type || !doctor_name) {
+    if (!date || !time || !type) {
       return NextResponse.json(
-        { error: 'Missing required fields: date, time, type, and doctor_name are required' },
+        { error: 'Missing required fields: date, time, and type are required' },
         { status: 400 }
       );
     }
 
-    // Check if the time slot is already taken
+    // Assign a doctor using smart assignment logic
+    const assignedDoctor = await assignDoctor({
+      urgencyLevel: urgency_level as 'low' | 'medium' | 'high' | 'emergency',
+      symptoms: symptoms || [],
+      appointmentType: appointment_type || type,
+      preferredSpecialization: undefined // Let the system decide
+    });
+
+    const doctorName = assignedDoctor?.name || 'Dr. Available';
+    const doctorId = assignedDoctor?.doctor_id;
+
+    // Check if the time slot is already taken by the assigned doctor
     const existingAppointment = await Appointment.findOne({
       date: new Date(date),
       time,
+      doctor_id: doctorId,
       status: 'scheduled'
     });
 
     if (existingAppointment) {
       return NextResponse.json(
-        { error: 'This time slot is already booked' },
+        { error: 'This time slot is already booked for the assigned doctor' },
         { status: 409 }
       );
     }
@@ -121,11 +171,12 @@ export async function POST(request: NextRequest) {
     // Create new appointment
     const appointment = new Appointment({
       patient_id: payload.id,
-      doctor_name,
+      doctor_name: doctorName,
+      doctor_id: doctorId, // Now includes real doctor ID
       date: new Date(date),
       time,
       type,
-      notes,
+      notes: `${notes || ''}${assignedDoctor?.specialization ? ` - Assigned to ${assignedDoctor.specialization.replace('-', ' ')} specialist` : ''}`.trim(),
       consultation_id,
       symptoms: symptoms || [],
       urgency_level: urgency_level || 'medium',
@@ -138,9 +189,29 @@ export async function POST(request: NextRequest) {
     // Populate patient details for response
     await appointment.populate('patient', 'name student_id email');
 
+    console.log('💾 Appointment created with doctor assignment:', {
+      appointment_id: appointment._id,
+      patient_id: appointment.patient_id,
+      doctor_name: appointment.doctor_name,
+      doctor_id: appointment.doctor_id,
+      specialization: assignedDoctor?.specialization,
+      date: appointment.date,
+      time: appointment.time,
+      urgency_level: appointment.urgency_level,
+      assignment_successful: !!assignedDoctor
+    });
+
     return NextResponse.json({ 
-      appointment,
-      message: 'Appointment booked successfully'
+      appointment: {
+        ...appointment.toObject(),
+        id: appointment._id.toString()
+      },
+      assigned_doctor: {
+        name: doctorName,
+        doctor_id: doctorId,
+        specialization: assignedDoctor?.specialization
+      },
+      message: `Appointment booked successfully${assignedDoctor?.specialization ? ` with ${assignedDoctor.specialization.replace('-', ' ')} specialist` : ''}`
     }, { status: 201 });
 
   } catch (error) {

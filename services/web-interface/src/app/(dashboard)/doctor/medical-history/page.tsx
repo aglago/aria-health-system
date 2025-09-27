@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/layout/navbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,97 +11,106 @@ import { Search, FileText, User, Calendar, AlertTriangle, Eye } from 'lucide-rea
 import { format } from 'date-fns';
 import { useAuth } from '@/lib/auth/auth-context';
 
-interface Patient {
+interface MedicalRecord {
   id: string;
-  name: string;
-  student_id: string;
-  lastVisit: Date;
-  totalRecords: number;
-  recentDiagnosis: string;
+  patient_id: string;
+  patient_name: string;
+  visit_date: Date;
+  doctor_name: string;
+  final_diagnosis: string;
+  chief_complaint: string;
+  treatment_plan: string;
+  medications_prescribed: any[];
+  follow_up_required: boolean;
+  record_type: string;
   severity: 'low' | 'medium' | 'high';
-  status: 'active' | 'resolved' | 'monitoring';
 }
 
 export default function DoctorMedicalHistory() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Redirect if not authenticated or not a doctor
+  // Fetch individual medical records (not patient summaries)
+  const fetchMedicalRecords = async () => {
+    try {
+      const response = await fetch('/api/medical-records?limit=100', {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.records && Array.isArray(data.records)) {
+          const formattedRecords: MedicalRecord[] = data.records.map((record: any) => ({
+            id: record._id || record.id,
+            patient_id: record.patient_id,
+            patient_name: record.patient?.name || 'Unknown Patient',
+            visit_date: new Date(record.record_date || record.visit_date),
+            doctor_name: record.doctor_name || record.doctor?.name || 'Unknown Doctor',
+            final_diagnosis: record.final_diagnosis || 'No diagnosis recorded',
+            chief_complaint: record.chief_complaint || 'Not specified',
+            treatment_plan: record.treatment_plan || 'No treatment plan',
+            medications_prescribed: record.medications_prescribed || [],
+            follow_up_required: record.follow_up_required || false,
+            record_type: record.record_type || 'consultation',
+            severity: record.urgency_level === 'high' ? 'high' : 
+                     record.urgency_level === 'medium' ? 'medium' : 'low'
+          }));
+
+          setMedicalRecords(formattedRecords.sort((a, b) => 
+            b.visit_date.getTime() - a.visit_date.getTime()
+          ));
+        } else {
+          setMedicalRecords([]);
+        }
+      } else {
+        console.error('Failed to fetch medical records:', response.statusText);
+        setMedicalRecords([]);
+      }
+    } catch (error) {
+      console.error('Error fetching medical records:', error);
+      setMedicalRecords([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user && user.role === 'doctor') {
+      fetchMedicalRecords();
+    }
+  }, [user]);
+
+  // Redirect if not authenticated or not a doctor - only on client side
+  useEffect(() => {
+    if (!loading && (!user || user.role !== 'doctor')) {
+      router.push('/role-selection');
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!user || user.role !== 'doctor') {
-    router.push('/role-selection');
     return null;
   }
 
-  // Mock patient data
-  const patients: Patient[] = [
-    {
-      id: '1',
-      name: 'John Smith',
-      student_id: 'UEB/123/24',
-      lastVisit: new Date('2024-01-15'),
-      totalRecords: 8,
-      recentDiagnosis: 'Tension headaches, stress-related',
-      severity: 'high',
-      status: 'monitoring'
-    },
-    {
-      id: '2',
-      name: 'Sarah Johnson',
-      student_id: 'UEC/456/24',
-      lastVisit: new Date('2024-01-14'),
-      totalRecords: 5,
-      recentDiagnosis: 'Chronic fatigue syndrome',
-      severity: 'medium',
-      status: 'active'
-    },
-    {
-      id: '3',
-      name: 'Michael Chen',
-      student_id: 'UEP/789/24',
-      lastVisit: new Date('2024-01-13'),
-      totalRecords: 12,
-      recentDiagnosis: 'Allergic reaction to shellfish',
-      severity: 'high',
-      status: 'resolved'
-    },
-    {
-      id: '4',
-      name: 'Emma Davis',
-      student_id: 'UEB/111/24',
-      lastVisit: new Date('2024-01-12'),
-      totalRecords: 6,
-      recentDiagnosis: 'Anxiety disorder, panic attacks',
-      severity: 'medium',
-      status: 'active'
-    },
-    {
-      id: '5',
-      name: 'David Wilson',
-      student_id: 'UEC/222/24',
-      lastVisit: new Date('2024-01-11'),
-      totalRecords: 3,
-      recentDiagnosis: 'Digestive issues, IBS symptoms',
-      severity: 'low',
-      status: 'monitoring'
-    },
-    {
-      id: '6',
-      name: 'Lisa Parker',
-      student_id: 'UEB/333/24',
-      lastVisit: new Date('2024-01-10'),
-      totalRecords: 4,
-      recentDiagnosis: 'Upper respiratory infection',
-      severity: 'low',
-      status: 'resolved'
-    }
-  ];
-
-  // Filter patients based on search term
-  const filteredPatients = patients.filter(patient =>
-    patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.student_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.recentDiagnosis.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filter medical records based on search term
+  const filteredRecords = medicalRecords.filter(record =>
+    record.patient_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    record.patient_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    record.final_diagnosis.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getSeverityColor = (severity: string) => {
@@ -130,13 +139,13 @@ export default function DoctorMedicalHistory() {
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
       <Navbar />
       
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-7xl mx-auto">
+      <main className="py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground mb-2">Patient Medical Records</h1>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Medical Records</h1>
             <p className="text-muted-foreground">
-              Access and review complete medical histories for all patients
+              Individual visit documentation - review specific medical encounters and appointment records
             </p>
           </div>
 
@@ -167,8 +176,8 @@ export default function DoctorMedicalHistory() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Patients</p>
-                    <p className="text-3xl font-bold text-foreground">{patients.length}</p>
+                    <p className="text-sm font-medium text-muted-foreground">Medical Records</p>
+                    <p className="text-3xl font-bold text-foreground">{medicalRecords.length}</p>
                   </div>
                   <User className="h-8 w-8 text-blue-600" />
                 </div>
@@ -178,9 +187,9 @@ export default function DoctorMedicalHistory() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Active Cases</p>
+                    <p className="text-sm font-medium text-muted-foreground">Recent Records</p>
                     <p className="text-3xl font-bold text-blue-600">
-                      {patients.filter(p => p.status === 'active').length}
+                      {medicalRecords.filter(r => r.follow_up_required).length}
                     </p>
                   </div>
                   <AlertTriangle className="h-8 w-8 text-blue-600" />
@@ -193,7 +202,7 @@ export default function DoctorMedicalHistory() {
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">High Priority</p>
                     <p className="text-3xl font-bold text-red-600">
-                      {patients.filter(p => p.severity === 'high').length}
+                      {medicalRecords.filter(r => r.severity === 'high').length}
                     </p>
                   </div>
                   <AlertTriangle className="h-8 w-8 text-red-600" />
@@ -204,9 +213,9 @@ export default function DoctorMedicalHistory() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Records</p>
+                    <p className="text-sm font-medium text-muted-foreground">Unique Patients</p>
                     <p className="text-3xl font-bold text-foreground">
-                      {patients.reduce((sum, p) => sum + p.totalRecords, 0)}
+                      {new Set(medicalRecords.map(r => r.patient_id)).size}
                     </p>
                   </div>
                   <FileText className="h-8 w-8 text-green-600" />
@@ -217,23 +226,23 @@ export default function DoctorMedicalHistory() {
 
           {/* Patient Records Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredPatients.map((patient) => (
-              <Card key={patient.id} className="hover:shadow-lg transition-shadow">
+            {filteredRecords.map((record) => (
+              <Card key={record.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div>
-                      <CardTitle className="text-lg">{patient.name}</CardTitle>
+                      <CardTitle className="text-lg">{record.patient_name}</CardTitle>
                       <CardDescription className="flex items-center gap-2 mt-1">
                         <User className="w-3 h-3" />
-                        {patient.student_id}
+                        {record.patient_id}
                       </CardDescription>
                     </div>
                     <div className="flex gap-2">
-                      <Badge className={getSeverityColor(patient.severity)}>
-                        {patient.severity}
+                      <Badge className={getSeverityColor(record.severity)}>
+                        {record.severity}
                       </Badge>
-                      <Badge className={getStatusColor(patient.status)}>
-                        {patient.status}
+                      <Badge variant="outline">
+                        {record.record_type}
                       </Badge>
                     </div>
                   </div>
@@ -241,28 +250,33 @@ export default function DoctorMedicalHistory() {
                 <CardContent>
                   <div className="space-y-3">
                     <div>
-                      <h4 className="font-medium text-sm text-muted-foreground mb-1">Recent Diagnosis</h4>
-                      <p className="text-sm">{patient.recentDiagnosis}</p>
+                      <h4 className="font-medium text-sm text-muted-foreground mb-1">Diagnosis</h4>
+                      <p className="text-sm font-medium">{record.final_diagnosis}</p>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-medium text-sm text-muted-foreground mb-1">Chief Complaint</h4>
+                      <p className="text-sm text-muted-foreground">{record.chief_complaint}</p>
                     </div>
                     
                     <div className="flex items-center justify-between text-sm text-muted-foreground">
                       <div className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {format(patient.lastVisit, 'MMM dd, yyyy')}
+                        {format(record.visit_date, 'MMM dd, yyyy')}
                       </div>
                       <div className="flex items-center gap-1">
                         <FileText className="w-3 h-3" />
-                        {patient.totalRecords} records
+                        {record.doctor_name}
                       </div>
                     </div>
                     
                     <Button 
-                      onClick={() => handleViewHistory(patient.student_id)}
+                      onClick={() => router.push(`/doctor/medical-record/${record.id}`)}
                       className="w-full mt-4"
                       variant="outline"
                     >
                       <Eye className="w-4 h-4 mr-2" />
-                      View Full History
+                      View Medical Record
                     </Button>
                   </div>
                 </CardContent>
@@ -271,7 +285,7 @@ export default function DoctorMedicalHistory() {
           </div>
 
           {/* No results message */}
-          {filteredPatients.length === 0 && searchTerm && (
+          {filteredRecords.length === 0 && searchTerm && (
             <Card className="mt-8">
               <CardContent className="pt-6">
                 <div className="text-center py-8">

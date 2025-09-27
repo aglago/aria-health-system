@@ -3,3 +3,5 @@ __pycache__/
 .env
 temp.md
 services/ai-service/aria-env/
+node_modules
+venv

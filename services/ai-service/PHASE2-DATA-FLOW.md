@@ -11,9 +11,9 @@ Complete data flow analysis for Phase 2: Core ML + Conversational Doctor AI
 │                 │    │                 │    │                 │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                                                         │
-                        ┌───────────────────────────────┼───────────────────────────────┐
-                        │                               │                               │
-                        ▼                               ▼                               ▼
+                    ┌───────────────────────────────────┼───────────────────────────────┐
+                    │                                   │                               │
+                    ▼                                   ▼                               ▼
             ┌─────────────────┐              ┌─────────────────┐              ┌─────────────────┐
             │   ML Engine     │              │ Intelligent     │              │  RAG Service    │
             │ ml_medical_ai   │              │ Doctor Service  │◄─────────────│ Medical KB      │
@@ -31,6 +31,30 @@ Complete data flow analysis for Phase 2: Core ML + Conversational Doctor AI
                                               │Doctor Scheduling│
                                               │ & Briefing      │
                                               └─────────────────┘
+                                                      │
+                                                      ▼
+                                          ┌─────────────────────────┐
+                                          │    COMPLETE MEDICAL     │
+                                          │    WORKFLOW SYSTEM      │
+                                          └─────────────────────────┘
+                                                      │
+                        ┌─────────────────────────────┼─────────────────────────────┐
+                        │                             │                             │
+                        ▼                             ▼                             ▼
+            ┌─────────────────────┐       ┌─────────────────────┐       ┌─────────────────────┐
+            │   In-Person         │       │   Medical Records   │       │  Disease            │
+            │   Consultation      │       │   Management        │       │  Surveillance       │
+            │   & Documentation   │       │   System            │       │  & Analytics        │
+            └─────────────────────┘       └─────────────────────┘       └─────────────────────┘
+                        │                             │                             │
+                        ▼                             ▼                             ▼
+            ┌─────────────────────┐       ┌─────────────────────┐       ┌─────────────────────┐
+            │ • Doctor-Patient    │       │ • Post-Appointment  │       │ • Disease Trend     │
+            │   Meeting           │       │   Record Creation   │       │   Analysis          │
+            │ • Diagnosis         │       │ • Treatment Plans   │       │ • Outbreak          │
+            │ • Treatment         │       │ • Medication Mgmt   │       │   Detection         │
+            │ • Assessment        │       │ • Follow-up Care    │       │ • Public Health     │
+            └─────────────────────┘       └─────────────────────┘       └─────────────────────┘
 ```
 
 ## **Phase 2 Data Flow Scenarios**
@@ -462,3 +486,344 @@ self.sessions: Dict[str, ConversationSession] = {}
 4. **Connection pooling:** For external service calls
 
 This Phase 2 architecture provides a robust foundation with clear separation of concerns, comprehensive error handling, and production-ready patterns for conversational AI in healthcare.
+
+---
+
+## **COMPLETE MEDICAL WORKFLOW SYSTEM**
+
+### **7. Doctor Appointment Booking & Assignment Flow**
+
+#### **Endpoint:** `POST /aria/doctor/book-appointment`
+
+**Location:** `services/web-interface/src/app/api/aria/doctor/book-appointment/route.ts`
+
+```
+┌─ APPOINTMENT BOOKING FLOW ─────────────────────────────────────────┐
+│                                                                     │
+│ 1. Dr. ARIA Recommendation                                         │
+│    - Dr. ARIA completes consultation with student                  │
+│    - Assesses symptoms, severity, and medical context              │
+│    - Recommends appointment if needed                              │
+│    - Consultation data stored with comprehensive medical info      │
+│                                                                     │
+│ 2. Doctor Assignment Algorithm                                     │
+│    Location: services/web-interface/src/lib/doctor-assignment.ts   │
+│    ├─ Smart Scheduling: findAvailableTimeSlots()                  │
+│    ├─ Specialization Matching: getSpecializedDoctors()            │
+│    ├─ Workload Balancing: calculateDoctorWorkload()               │
+│    └─ Availability Check: isDoctorAvailable()                     │
+│                                                                     │
+│ 3. Appointment Creation                                            │
+│    - MongoDB Appointment document created                          │
+│    - Links to consultation_id with Dr. ARIA session data         │
+│    - Student and doctor notifications                              │
+│    - Calendar integration                                          │
+│                                                                     │
+│ 4. Pre-Consultation Briefing                                      │
+│    - Doctor accesses appointment details                          │
+│    - Views comprehensive Dr. ARIA consultation report:            │
+│      * Complete conversation history                               │
+│      * Extracted symptoms and severity                            │
+│      * AI-generated assessment                                     │
+│      * Medical context from RAG knowledge base                    │
+│      * Recommended follow-up questions                            │
+│      * Urgency level and confidence scores                        │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Files:**
+- **Appointment API:** `services/web-interface/src/app/api/appointments/route.ts`
+- **Doctor Assignment:** `services/web-interface/src/lib/doctor-assignment.ts`  
+- **Appointment Model:** `services/web-interface/src/models/Appointment.ts`
+- **Consultation Model:** `services/web-interface/src/models/Consultation.ts`
+
+---
+
+### **8. In-Person Doctor Consultation Flow**
+
+#### **Location:** Doctor Dashboard & Appointment Management
+
+**Files:** `services/web-interface/src/app/(dashboard)/doctor-dashboard/page.tsx`
+
+```
+┌─ DOCTOR CONSULTATION WORKFLOW ─────────────────────────────────────┐
+│                                                                     │
+│ 1. Pre-Consultation Preparation                                    │
+│    - Doctor reviews Dr. ARIA consultation report                   │
+│    - Comprehensive medical data pre-populated:                     │
+│      * Chief complaint and symptoms                                │
+│      * History of present illness                                  │
+│      * AI-extracted medical assessment                             │
+│      * Severity scoring and urgency level                         │
+│      * RAG-enhanced medical context                               │
+│      * Dr. ARIA's differential diagnosis suggestions               │
+│                                                                     │
+│ 2. Doctor-Patient Meeting                                          │
+│    - In-person consultation with informed context                  │
+│    - Doctor can verify AI assessment                               │
+│    - Additional examination and testing as needed                  │
+│    - Professional medical judgment applied                         │
+│                                                                     │
+│ 3. Clinical Documentation                                          │
+│    - Doctor updates appointment with:                              │
+│      * Medical notes from consultation                             │
+│      * Final diagnosis confirmation/revision                       │
+│      * Treatment plan decisions                                    │
+│      * Medication prescriptions                                    │
+│      * Follow-up care instructions                                │
+│    - Appointment status updated to "completed"                     │
+│                                                                     │
+│ 4. Post-Consultation Actions                                       │
+│    - Medical record creation initiated                             │
+│    - Patient care plan finalized                                   │
+│    - Insurance and billing integration                             │
+│    - Follow-up scheduling if required                              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### **9. Medical Record Management System**
+
+#### **Endpoint:** `POST /api/medical-records`
+
+**Location:** `services/web-interface/src/app/api/medical-records/route.ts`
+
+```
+┌─ MEDICAL RECORD CREATION FLOW ─────────────────────────────────────┐
+│                                                                     │
+│ 1. Medical Record Initiation                                       │
+│    - Triggered after completed appointment                          │
+│    - Doctor clicks "Create Medical Record" button                  │
+│    - System pre-populates with consultation + appointment data     │
+│                                                                     │
+│ 2. Comprehensive Medical Documentation                             │
+│    Location: services/web-interface/src/components/forms/         │
+│              MedicalRecordForm.tsx                                 │
+│                                                                     │
+│    6-Tab Medical Record System:                                    │
+│    ┌─ Tab 1: Assessment & Diagnosis ──────────────────────────┐   │
+│    │ • Chief complaint (pre-filled from Dr. ARIA)            │   │
+│    │ • History of present illness                             │   │  
+│    │ • Review of systems                                      │   │
+│    │ • Final diagnosis (doctor confirmation)                  │   │
+│    │ • Differential diagnosis considerations                  │   │
+│    │ • Assessment notes and clinical reasoning               │   │
+│    └─────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│    ┌─ Tab 2: Physical Examination ─────────────────────────────┐   │
+│    │ • Vital signs (BP, HR, temp, weight, height)            │   │
+│    │ • General appearance and mental status                  │   │
+│    │ • System-specific examination findings                  │   │
+│    │ • Abnormal findings documentation                       │   │
+│    └─────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│    ┌─ Tab 3: Treatment & Procedures ────────────────────────────┐   │
+│    │ • Treatment plan overview                                │   │
+│    │ • Procedures performed                                   │   │
+│    │ • Therapeutic interventions                             │   │
+│    │ • Clinical decision-making rationale                    │   │
+│    └─────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│    ┌─ Tab 4: Medications & Prescriptions ──────────────────────┐   │
+│    │ • Current medications review                             │   │
+│    │ • New prescriptions with dosage/frequency               │   │
+│    │ • Drug interactions and contraindications               │   │
+│    │ • Medication adherence instructions                     │   │
+│    └─────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│    ┌─ Tab 5: Tests & Investigations ───────────────────────────┐   │
+│    │ • Laboratory tests ordered                               │   │
+│    │ • Imaging studies requested                             │   │
+│    │ • Test results and interpretation                       │   │
+│    │ • Additional diagnostic procedures                      │   │
+│    └─────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│    ┌─ Tab 6: Follow-up & Care Plan ────────────────────────────┐   │
+│    │ • Follow-up appointment scheduling                       │   │
+│    │ • Patient education provided                             │   │
+│    │ • Discharge instructions                                 │   │
+│    │ • Emergency contact protocols                            │   │
+│    │ • Long-term care coordination                           │   │
+│    └─────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│ 3. Medical Record Storage                                          │
+│    - MongoDB MedicalRecord document created                        │
+│    - Links appointment_id, consultation_id, patient_id            │
+│    - 40+ comprehensive medical fields captured                     │
+│    - Role-based access control (doctor/admin only)                │
+│    - Medical history integration                                   │
+│                                                                     │
+│ 4. Patient Medical History Update                                  │
+│    - Student medical history page automatically updated            │
+│    - Doctor medical history shows patient records                  │
+│    - Searchable medical record database                           │
+│    - Export and print functionality                               │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### **10. Disease Surveillance & Public Health Analytics**
+
+#### **Endpoint:** `GET /api/analytics/disease-trends`
+
+**Location:** `services/web-interface/src/app/api/analytics/disease-trends/route.ts`
+
+```
+┌─ DISEASE SURVEILLANCE SYSTEM ──────────────────────────────────────┐
+│                                                                     │
+│ 1. Real-Time Disease Monitoring                                    │
+│    - Aggregates confirmed diagnoses from medical records           │
+│    - Tracks symptom patterns from Dr. ARIA consultations          │
+│    - Monitors appointment trends and urgency levels                │
+│    - Geographic distribution analysis (campus locations)           │
+│                                                                     │
+│ 2. Ghana-Specific Disease Intelligence                            │
+│    Common Conditions Monitored:                                    │
+│    • Malaria (tropical/endemic)                                   │
+│    • Typhoid Fever                                                │
+│    • Upper Respiratory Tract Infections                           │
+│    • Gastroenteritis (food poisoning)                            │
+│    • Stress-related conditions (academic pressure)                │
+│    • Skin conditions (tropical climate)                           │
+│    • Dehydration and heat-related illness                        │
+│                                                                     │
+│ 3. Outbreak Detection Algorithm                                    │
+│    Location: services/web-interface/src/app/api/analytics/        │
+│              disease-trends/route.ts                              │
+│                                                                     │
+│    MongoDB Aggregation Pipeline:                                   │
+│    ┌─ Disease Trend Analysis ─────────────────────────────────┐   │
+│    │ db.medicalrecords.aggregate([                           │   │
+│    │   {                                                     │   │
+│    │     $match: {                                          │   │
+│    │       record_date: { $gte: last30Days },              │   │
+│    │       final_diagnosis: { $ne: null }                  │   │
+│    │     }                                                   │   │
+│    │   },                                                   │   │
+│    │   {                                                    │   │
+│    │     $group: {                                          │   │
+│    │       _id: "$final_diagnosis",                         │   │
+│    │       count: { $sum: 1 },                             │   │
+│    │       recent_cases: { $push: "$record_date" },        │   │
+│    │       avg_severity: { $avg: "$severity_numeric" }     │   │
+│    │     }                                                  │   │
+│    │   },                                                   │   │
+│    │   { $sort: { count: -1 } }                           │   │
+│    │ ])                                                     │   │
+│    └───────────────────────────────────────────────────────┘   │
+│                                                                     │
+│ 4. Public Health Dashboard                                        │
+│    Location: services/web-interface/src/app/(dashboard)/          │
+│              disease-surveillance/page.tsx                        │
+│                                                                     │
+│    Interactive Analytics Features:                                 │
+│    ┌─ Disease Trend Visualization ────────────────────────────┐   │
+│    │ • Line charts showing disease incidence over time      │   │
+│    │ • Bar charts for most common conditions               │   │
+│    │ • Heat maps for campus outbreak hotspots              │   │
+│    │ • Time-series analysis with filtering options         │   │
+│    └───────────────────────────────────────────────────────┘   │
+│                                                                     │
+│    ┌─ Outbreak Alert System ────────────────────────────────┐   │
+│    │ • Automatic threshold monitoring                        │   │
+│    │ • Email/SMS alerts for health administrators           │   │
+│    │ • Risk assessment and severity classification          │   │
+│    │ • Containment protocol recommendations                 │   │
+│    └───────────────────────────────────────────────────────┘   │
+│                                                                     │
+│    ┌─ Symptom Pattern Analysis ────────────────────────────────┐   │
+│    │ • Most reported symptoms tracking                       │   │
+│    │ • Seasonal variation analysis                          │   │
+│    │ • Correlation with environmental factors               │   │
+│    │ • Predictive modeling for future outbreaks            │   │
+│    └───────────────────────────────────────────────────────┘   │
+│                                                                     │
+│ 5. Public Health Intelligence                                     │
+│    - Integration with Ghana Health Service protocols               │
+│    - University health policy compliance                          │
+│    - Epidemiological reporting standards                          │
+│    - Anonymous data sharing for research                          │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## **INTEGRATED DATA PIPELINE ARCHITECTURE**
+
+### **Complete Student Healthcare Journey**
+
+```
+┌─ COMPLETE HEALTHCARE WORKFLOW ─────────────────────────────────────┐
+│                                                                     │
+│ 1. Student Health Concern                                          │
+│    └─► Student experiences symptoms                                │
+│                                                                     │
+│ 2. Dr. ARIA Consultation                                           │
+│    ├─► AI-powered medical interview                               │
+│    ├─► Symptom extraction and analysis                            │
+│    ├─► RAG-enhanced medical knowledge                             │
+│    ├─► Severity assessment and urgency scoring                    │
+│    └─► Comprehensive consultation record created                  │
+│                                                                     │
+│ 3. Smart Doctor Assignment                                         │
+│    ├─► Appointment recommendation if needed                        │
+│    ├─► Intelligent doctor matching                                │
+│    ├─► Availability-based scheduling                              │
+│    └─► Pre-consultation briefing prepared                         │
+│                                                                     │
+│ 4. Doctor-Patient Consultation                                     │
+│    ├─► Informed consultation with AI insights                     │
+│    ├─► Professional medical examination                           │
+│    ├─► Diagnosis confirmation/revision                            │
+│    └─► Treatment plan development                                 │
+│                                                                     │
+│ 5. Medical Record Documentation                                    │
+│    ├─► Comprehensive 40+ field medical record                     │
+│    ├─► Treatment and medication documentation                     │
+│    ├─► Follow-up care coordination                                │
+│    └─► Patient medical history integration                        │
+│                                                                     │
+│ 6. Public Health Intelligence                                     │
+│    ├─► Disease surveillance and trend analysis                    │
+│    ├─► Outbreak detection and alerting                           │
+│    ├─► Campus health policy support                              │
+│    └─► Epidemiological research contribution                      │
+│                                                                     │
+│ 7. Continuous Care Cycle                                          │
+│    ├─► Follow-up appointment scheduling                           │
+│    ├─► Patient education and self-care                           │
+│    ├─► Medication adherence monitoring                            │
+│    └─► Long-term health trend tracking                           │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### **Technology Stack Integration**
+
+#### **Frontend Architecture (Next.js 15 + TypeScript)**
+- **Student Interface:** Self-service Dr. ARIA consultations and medical history
+- **Doctor Interface:** Comprehensive appointment management and medical records
+- **Admin Interface:** Disease surveillance and public health analytics
+- **Authentication:** JWT-based role-based access control with HTTP-only cookies
+
+#### **Backend Services**
+- **AI Service (FastAPI + Python):** Dr. ARIA conversational AI and ML analysis
+- **Web Interface (Next.js API):** Full-stack medical workflow management  
+- **Database (MongoDB):** Scalable document storage for medical data
+- **RAG Service:** Medical knowledge base integration with TF-IDF vectorization
+
+#### **Data Models & Storage**
+- **Consultation Model:** 40+ fields for AI conversation and medical extraction
+- **Appointment Model:** Smart scheduling with doctor assignment algorithms
+- **Medical Record Model:** Comprehensive clinical documentation system
+- **User Models:** Role-based authentication for students, doctors, and staff
+- **Analytics Models:** Disease surveillance and outbreak detection
+
+#### **Production Considerations**
+- **Scalability:** Microservices architecture with API gateway pattern
+- **Security:** Medical data encryption, HIPAA-compliant audit trails
+- **Performance:** Redis caching, MongoDB indexing, async processing
+- **Monitoring:** Real-time health metrics and system performance tracking
+
+This comprehensive medical workflow system transforms traditional campus healthcare by integrating AI-powered initial consultations with professional medical care, creating a seamless, data-driven healthcare experience that improves patient outcomes while supporting public health initiatives.

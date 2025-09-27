@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
 import Consultation from '@/models/Consultation';
+import { assignDoctor } from '@/lib/doctor-assignment';
 
 interface BookAppointmentRequest {
   session_id: string;
@@ -137,28 +138,48 @@ export async function POST(request: NextRequest) {
       }
 
       // Parse appointment time to extract date and time
-      const appointmentTimeStr = body.selected_time.time; // e.g., "09:00 AM on Monday"
-      const doctorName = body.selected_time.doctor || 'Dr. Ama Osei';
+      const appointmentTimeStr = body.selected_time.time; // e.g., "09:00 AM on Today" or "09:00 AM on Monday, Aug 19"
       const appointmentType = body.selected_time.type || 'General Consultation';
       
-      // For now, set appointment for next occurrence of the day mentioned
-      // This is a simplified approach - in production you'd want more precise date parsing
-      const today = new Date();
-      const appointmentDate = new Date(today);
-      appointmentDate.setDate(today.getDate() + 1); // Default to tomorrow
+      // Use the datetime field if available, otherwise parse from time string
+      let appointmentDate: Date;
+      let appointmentTime: string;
       
-      // Extract time (e.g., "09:00 AM" from "09:00 AM on Monday")
-      const timeMatch = appointmentTimeStr.match(/(\d{1,2}:\d{2}\s*[AP]M)/i);
-      const appointmentTime = timeMatch ? timeMatch[1] : '09:00 AM';
+      if (body.selected_time.datetime) {
+        // Use the provided datetime (ISO string)
+        appointmentDate = new Date(body.selected_time.datetime);
+        appointmentTime = appointmentDate.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+      } else {
+        // Fallback: Extract time from string and use today as default
+        const timeMatch = appointmentTimeStr.match(/(\d{1,2}:\d{2}\s*[AP]M)/i);
+        appointmentTime = timeMatch ? timeMatch[1] : '09:00 AM';
+        appointmentDate = new Date(); // Use today as fallback
+      }
+
+      // Assign a real doctor based on consultation data
+      const assignedDoctor = await assignDoctor({
+        urgencyLevel: consultation?.urgency_level as 'low' | 'medium' | 'high' | 'emergency',
+        symptoms: consultation?.symptoms || [],
+        appointmentType: appointmentType,
+        preferredSpecialization: undefined // Let the system decide
+      });
+
+      const doctorName = assignedDoctor?.name || 'Dr. Available';
+      const doctorId = assignedDoctor?.doctor_id;
 
       // Create appointment record
       const appointment = new Appointment({
         patient_id: consultation?.patient_id || body.user_contact?.student_id || 'unknown',
         doctor_name: doctorName,
+        doctor_id: doctorId, // Now includes real doctor ID
         date: appointmentDate,
         time: appointmentTime,
         type: appointmentType,
-        notes: `Booked through Dr. ARIA consultation`,
+        notes: `Booked through Dr. ARIA consultation${assignedDoctor?.specialization ? ` - Assigned to ${assignedDoctor.specialization.replace('-', ' ')} specialist` : ''}`,
         consultation_id: body.session_id,
         symptoms: consultation?.symptoms || [],
         urgency_level: consultation?.urgency_level || 'medium',
@@ -178,9 +199,13 @@ export async function POST(request: NextRequest) {
       console.log('💾 Appointment saved to database:', {
         appointment_id: appointment._id,
         patient_id: appointment.patient_id,
-        doctor: appointment.doctor_name,
+        doctor_name: appointment.doctor_name,
+        doctor_id: appointment.doctor_id,
+        specialization: assignedDoctor?.specialization,
         date: appointment.date,
-        time: appointment.time
+        time: appointment.time,
+        urgency_level: appointment.urgency_level,
+        assignment_successful: !!assignedDoctor
       });
 
     } catch (dbError) {

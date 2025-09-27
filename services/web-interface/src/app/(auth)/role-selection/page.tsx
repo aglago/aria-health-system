@@ -18,17 +18,17 @@ export default function RoleSelection() {
     try {
       if (role === 'student') {
         await login({
-          student_id: 'UEB/123/24',
-          password: 'student123',
-          name: 'Demo Student',
+          student_id: 'BS424100620',
+          password: 'demo2024',
+          name: 'Kwame Asante',
           role: 'student'
         });
         router.push('/student-dashboard');
       } else {
         await login({
-          doctor_id: 'DR001',
-          password: 'doctor123',
-          name: 'Dr. Demo',
+          doctor_id: 'UMAT-DOC-001',
+          password: 'demo2024',
+          name: 'Dr. Akosua Mensah',
           role: 'doctor'
         });
         router.push('/doctor-dashboard');
@@ -135,6 +135,13 @@ export default function RoleSelection() {
                   <Button className="w-full bg-green-600 hover:bg-green-700 text-white">
                     <LogIn className="w-4 h-4 mr-2" />
                     Sign In as Doctor
+                  </Button>
+                </Link>
+                
+                <Link href="/doctor-signup" className="block">
+                  <Button variant="outline" className="w-full border-green-600 text-green-600 hover:bg-green-50">
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Register as Doctor
                   </Button>
                 </Link>
                 

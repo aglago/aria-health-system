@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/layout/navbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,103 +47,114 @@ interface MedicalRecord {
 
 export default function StudentMedicalHistory() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
+  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
+  const [appointmentsCount, setAppointmentsCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Redirect if not authenticated or not a student
+  // Fetch medical records from database
+  const fetchMedicalRecords = async () => {
+    try {
+      const response = await fetch('/api/medical-records', {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Medical records response:', data);
+        
+        if (data.records && Array.isArray(data.records)) {
+          setMedicalRecords(data.records.map((record: Record<string, any>) => ({
+            id: record._id,
+            date: new Date(record.record_date),
+            type: record.record_type,
+            title: record.chief_complaint || 'Medical Consultation',
+            description: record.history_of_present_illness || 'No description available',
+            symptoms: record.symptoms_reported_to_aria || [],
+            diagnosis: record.final_diagnosis,
+            treatment: record.treatment_plan,
+            medications: record.medications_prescribed?.map((med: Record<string, any>) => 
+              `${med.medication_name} ${med.dosage} ${med.frequency}`) || [],
+            doctor: record.doctor_name,
+            severity: record.severity_level,
+            status: record.status === 'signed' ? 'completed' : record.status,
+            notes: record.patient_education_provided || '',
+            vitals: {
+              bloodPressure: record.vital_signs?.blood_pressure,
+              heartRate: record.vital_signs?.heart_rate,
+              temperature: record.vital_signs?.temperature,
+              weight: record.vital_signs?.weight,
+              height: record.vital_signs?.height
+            }
+          })));
+        } else {
+          console.warn('No records found in response');
+          setMedicalRecords([]);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Failed to fetch medical records:', response.status, errorData);
+      }
+    } catch (error) {
+      console.error('Error fetching medical records:', error);
+    }
+  };
+
+  // Fetch appointments count from actual appointments API
+  const fetchAppointmentsCount = async () => {
+    try {
+      const response = await fetch('/api/appointments', {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const appointments = data.appointments || [];
+        setAppointmentsCount(appointments.length);
+      }
+    } catch (error) {
+      console.error('Error fetching appointments count:', error);
+    }
+  };
+
+  const fetchAllData = async () => {
+    await Promise.all([
+      fetchMedicalRecords(),
+      fetchAppointmentsCount()
+    ]);
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    if (user && user.role === 'student') {
+      fetchAllData();
+    }
+  }, [user]);
+
+  // Redirect if not authenticated or not a student - only on client side
+  useEffect(() => {
+    if (!loading && (!user || user.role !== 'student')) {
+      router.push('/role-selection');
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!user || user.role !== 'student') {
-    router.push('/role-selection');
     return null;
   }
 
-  // Mock medical records for the current student
-  const medicalRecords: MedicalRecord[] = [
-    {
-      id: '1',
-      date: new Date('2024-01-15'),
-      type: 'consultation',
-      title: 'Follow-up: Persistent Headaches',
-      description: 'Follow-up consultation for tension headaches. Patient reports improvement with stress management techniques and recommended medications.',
-      symptoms: ['Headache', 'Light sensitivity', 'Neck tension'],
-      diagnosis: 'Tension-type headaches, improving',
-      treatment: 'Continue stress management, increase water intake, ergonomic workspace setup',
-      medications: ['Ibuprofen 400mg PRN', 'Magnesium supplement'],
-      doctor: 'Dr. Smith',
-      severity: 'medium',
-      status: 'completed',
-      notes: 'Patient showing good improvement. Recommend follow-up in 2 weeks if symptoms persist.',
-      vitals: {
-        bloodPressure: '120/80',
-        heartRate: 72,
-        temperature: 36.5,
-        weight: 70,
-        height: 175
-      }
-    },
-    {
-      id: '2',
-      date: new Date('2024-01-10'),
-      type: 'symptom_report',
-      title: 'Initial Consultation: Severe Headaches',
-      description: 'Student presented with severe, persistent headaches lasting 3 days. Associated with dizziness and light sensitivity.',
-      symptoms: ['Severe headache', 'Dizziness', 'Photophobia', 'Nausea'],
-      diagnosis: 'Tension headaches, stress-related',
-      treatment: 'Rest, hydration, stress management techniques, ergonomic assessment',
-      medications: ['Ibuprofen 400mg TID', 'Relaxation therapy'],
-      doctor: 'Dr. Smith',
-      severity: 'high',
-      status: 'follow_up_required',
-      notes: 'Referred to stress counseling. Follow-up in 1 week to assess progress.',
-      vitals: {
-        bloodPressure: '125/85',
-        heartRate: 78,
-        temperature: 36.8
-      }
-    },
-    {
-      id: '3',
-      date: new Date('2024-01-05'),
-      type: 'appointment',
-      title: 'Annual Health Check-up',
-      description: 'Routine annual health screening and wellness assessment.',
-      symptoms: [],
-      diagnosis: 'Overall good health, mild stress indicators',
-      treatment: 'Continue healthy lifestyle, stress management recommendations',
-      medications: ['Multivitamin daily'],
-      doctor: 'Dr. Johnson',
-      severity: 'low',
-      status: 'completed',
-      notes: 'All vital signs normal. Recommend stress management due to academic pressure.',
-      vitals: {
-        bloodPressure: '118/75',
-        heartRate: 68,
-        temperature: 36.4,
-        weight: 69,
-        height: 175
-      }
-    },
-    {
-      id: '4',
-      date: new Date('2023-12-20'),
-      type: 'emergency',
-      title: 'Allergic Reaction - Emergency Treatment',
-      description: 'Emergency presentation with allergic reaction after consuming shellfish at campus cafeteria.',
-      symptoms: ['Hives', 'Swelling', 'Difficulty breathing', 'Rapid pulse'],
-      diagnosis: 'Anaphylactic reaction to shellfish',
-      treatment: 'Epinephrine, antihistamines, corticosteroids, monitoring',
-      medications: ['Epinephrine 0.3mg IM', 'Diphenhydramine 50mg IV', 'Prednisone 40mg'],
-      doctor: 'Dr. Emergency',
-      severity: 'emergency',
-      status: 'completed',
-      notes: 'Patient responded well to treatment. Discharged with EpiPen prescription and dietary counseling.',
-      vitals: {
-        bloodPressure: '140/90',
-        heartRate: 110,
-        temperature: 37.2
-      }
-    }
-  ];
 
   // Filter records based on search term
   const filteredRecords = medicalRecords.filter(record =>
@@ -195,8 +206,8 @@ export default function StudentMedicalHistory() {
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
       <Navbar />
       
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-7xl mx-auto">
+      <main className="py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -264,7 +275,7 @@ export default function StudentMedicalHistory() {
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Appointments</p>
                     <p className="text-3xl font-bold text-green-600">
-                      {medicalRecords.filter(r => r.type === 'appointment').length}
+                      {appointmentsCount}
                     </p>
                   </div>
                   <Calendar className="h-8 w-8 text-green-600" />
@@ -288,7 +299,13 @@ export default function StudentMedicalHistory() {
 
           {/* Medical Records */}
           <div className="space-y-6">
-            {filteredRecords.map((record) => (
+            {isLoading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading medical records...</p>
+              </div>
+            ) : filteredRecords.length > 0 ? (
+              filteredRecords.map((record) => (
               <Card key={record.id} className="border-l-4 border-l-primary">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
@@ -396,11 +413,20 @@ export default function StudentMedicalHistory() {
                   )}
                 </CardContent>
               </Card>
-            ))}
+              ))
+            ) : (
+              <div className="text-center py-8">
+                <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">No medical records</h3>
+                <p className="text-muted-foreground">
+                  You don't have any medical records yet. Medical records will appear here after doctor visits.
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* No results message */}
-          {filteredRecords.length === 0 && searchTerm && (
+          {/* No search results message */}
+          {!isLoading && filteredRecords.length === 0 && searchTerm && (
             <Card className="mt-8">
               <CardContent className="pt-6">
                 <div className="text-center py-8">

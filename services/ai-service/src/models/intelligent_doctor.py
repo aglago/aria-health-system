@@ -351,11 +351,6 @@ Please respond as a caring doctor would, asking appropriate follow-up questions 
             message = "Thank you for all the information you've shared. I have enough details about your condition. You can now schedule an appointment with a doctor for a proper evaluation."
             questions = []
         
-        # Handle "add more information" choice
-        elif "want to add more information" in message_lower or "add more information" in message_lower:
-            message = "Of course! Please tell me any additional information about your symptoms, their severity, duration, or anything else that might be relevant to your condition."
-            questions = []
-        
         # Handle greetings (only if it's the start of conversation)
         elif any(word in message_lower for word in ["hi", "hello", "hey"]) and not is_ongoing_conversation:
             message = "Hello! I'm here to help with your health concerns. What symptoms or health issues would you like to discuss?"

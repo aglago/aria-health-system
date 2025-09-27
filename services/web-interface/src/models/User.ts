@@ -9,6 +9,7 @@ export interface IUser extends Document {
   password: string;
   email?: string;
   institution?: string;
+  specialization?: string;
   phone?: string;
   dateOfBirth?: Date;
   bloodType?: string;
@@ -33,6 +34,7 @@ const UserSchema: Schema = new Schema({
   password: { type: String, required: true },
   email: { type: String, sparse: true },
   institution: { type: String, default: 'UMaT' },
+  specialization: { type: String },
   phone: { type: String },
   dateOfBirth: { type: Date },
   bloodType: { type: String },
@@ -51,9 +53,7 @@ const UserSchema: Schema = new Schema({
   toObject: { virtuals: true }
 });
 
-// Create indexes
-UserSchema.index({ student_id: 1 }, { sparse: true });
-UserSchema.index({ doctor_id: 1 }, { sparse: true });
+// Create additional indexes (student_id and doctor_id already have unique indexes)
 UserSchema.index({ role: 1 });
 
 export default mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

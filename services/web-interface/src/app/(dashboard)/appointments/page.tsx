@@ -10,10 +10,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Calendar as CalendarIcon, Clock, Stethoscope, Plus, Bot } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Stethoscope, Plus, Bot, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import Link from 'next/link';
 import { format, isToday, isTomorrow } from 'date-fns';
 import { useAuth } from '@/lib/auth/auth-context';
+import MedicalRecordForm from '@/components/forms/MedicalRecordForm';
 
 interface Appointment {
   id: string;
@@ -30,6 +31,11 @@ interface Appointment {
   symptoms?: string[];
   urgency_level?: string;
   created_from_consultation?: boolean;
+  patient?: {
+    name: string;
+    student_id: string;
+    email?: string;
+  };
 }
 
 interface TimeSlot {
@@ -39,7 +45,7 @@ interface TimeSlot {
 
 export default function Appointments() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
@@ -47,6 +53,11 @@ export default function Appointments() {
   const [notes, setNotes] = useState('');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMedicalRecordFormOpen, setIsMedicalRecordFormOpen] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [consultationData, setConsultationData] = useState<any>(null);
+  const [isUpcomingCollapsed, setIsUpcomingCollapsed] = useState(false);
+  const [isPastCollapsed, setIsPastCollapsed] = useState(false);
 
   // Fetch appointments from database
   const fetchAppointments = async () => {
@@ -86,10 +97,21 @@ export default function Appointments() {
 
   // Redirect if not authenticated - only on client side
   useEffect(() => {
-    if (!user) {
+    if (!loading && !user) {
       router.push('/role-selection');
     }
-  }, [user, router]);
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return null;
@@ -177,13 +199,27 @@ export default function Appointments() {
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string, isPast = false) => {
+    // If it's a scheduled appointment that has passed, it's a missed appointment
+    if (status === 'scheduled' && isPast) {
+      return 'bg-amber-100 text-amber-800';
+    }
+    
     switch (status) {
       case 'scheduled': return 'bg-blue-100 text-blue-800';
       case 'completed': return 'bg-green-100 text-green-800';
       case 'cancelled': return 'bg-red-100 text-red-800';
+      case 'no-show': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const getDisplayStatus = (appointment: Appointment) => {
+    // If it's a scheduled appointment that has passed, show as "Missed"
+    if (appointment.status === 'scheduled' && isAppointmentPast(appointment)) {
+      return 'missed';
+    }
+    return appointment.status;
   };
 
   const getDateLabel = (date: Date) => {
@@ -192,8 +228,70 @@ export default function Appointments() {
     return format(date, 'MMM dd, yyyy');
   };
 
-  const upcomingAppointments = appointments.filter(apt => apt.status === 'scheduled');
-  const pastAppointments = appointments.filter(apt => apt.status === 'completed');
+  // Helper function to check if appointment date has passed
+  const isAppointmentPast = (appointment: Appointment) => {
+    const appointmentDate = new Date(appointment.date);
+    const now = new Date();
+    
+    // If the appointment date is before today, it's definitely past
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const aptDateStart = new Date(appointmentDate);
+    aptDateStart.setHours(0, 0, 0, 0);
+    
+    if (aptDateStart < todayStart) {
+      return true; // Past date
+    }
+    
+    if (aptDateStart > todayStart) {
+      return false; // Future date
+    }
+    
+    // Same date - check if the time has passed
+    if (appointment.time) {
+      try {
+        // Parse the time string (e.g., "8:00 AM", "12:30 PM")
+        const timeMatch = appointment.time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (timeMatch) {
+          let hours = parseInt(timeMatch[1]);
+          const minutes = parseInt(timeMatch[2]);
+          const period = timeMatch[3].toUpperCase();
+          
+          // Convert to 24-hour format
+          if (period === 'AM' && hours === 12) {
+            hours = 0;
+          } else if (period === 'PM' && hours !== 12) {
+            hours += 12;
+          }
+          
+          // Create appointment datetime
+          const appointmentDateTime = new Date(appointmentDate);
+          appointmentDateTime.setHours(hours, minutes, 0, 0);
+          
+          // Return true if appointment time has passed
+          return appointmentDateTime < now;
+        }
+      } catch (error) {
+        console.warn('Error parsing appointment time:', appointment.time, error);
+      }
+    }
+    
+    // Fallback: if we can't parse time, only consider date
+    return aptDateStart < todayStart;
+  };
+
+  // Upcoming appointments: scheduled status AND date is today or future
+  const upcomingAppointments = appointments.filter(apt => 
+    apt.status === 'scheduled' && !isAppointmentPast(apt)
+  );
+  
+  // Past appointments: completed, cancelled, no-show, OR scheduled but date has passed
+  const pastAppointments = appointments.filter(apt => 
+    apt.status === 'completed' || 
+    apt.status === 'cancelled' || 
+    apt.status === 'no-show' ||
+    (apt.status === 'scheduled' && isAppointmentPast(apt))
+  );
   
   // Calculate appointments this month
   const currentMonth = new Date().getMonth();
@@ -205,30 +303,113 @@ export default function Appointments() {
   
   const hasValidConsultation = checkConsultationRequired();
 
+  // Handle medical record creation
+  const handleCreateMedicalRecord = async (appointment: Appointment) => {
+    setSelectedAppointment(appointment);
+    
+    // Fetch consultation data if available
+    if (appointment.consultation_id) {
+      try {
+        const response = await fetch(`/api/consultations/debug/${appointment.consultation_id}`, {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setConsultationData({
+            symptoms: data.consultation?.symptoms || [],
+            primary_concern: data.consultation?.primary_concern || '',
+            diagnosis_summary: data.consultation?.diagnosis_summary || ''
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching consultation data:', error);
+      }
+    }
+    
+    setIsMedicalRecordFormOpen(true);
+  };
+
+  const handleMedicalRecordSubmit = async (recordData: any) => {
+    try {
+      const response = await fetch('/api/medical-records', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          appointment_id: selectedAppointment?.id,
+          ...recordData
+        })
+      });
+
+      if (response.ok) {
+        alert('Medical record created successfully!');
+        setIsMedicalRecordFormOpen(false);
+        setSelectedAppointment(null);
+        setConsultationData(null);
+        // Refresh appointments to reflect updated status
+        fetchAppointments();
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to create medical record: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Error creating medical record:', error);
+      alert('Failed to create medical record. Please try again.');
+    }
+  };
+
+  const checkMedicalRecordExists = async (appointmentId: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/medical-records?appointment_id=${appointmentId}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.records && data.records.length > 0;
+      }
+    } catch (error) {
+      console.error('Error checking medical record:', error);
+    }
+    return false;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
       <Navbar />
       
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto">
+      <main className="py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Appointments</h1>
-              <p className="text-muted-foreground">Manage your healthcare appointments</p>
+              <h1 className="text-3xl font-bold text-foreground">
+                {user?.role === 'doctor' ? 'Patient Appointments' : 'Appointments'}
+              </h1>
+              <p className="text-muted-foreground">
+                {user?.role === 'doctor' 
+                  ? 'View and manage patient appointments and medical records'
+                  : 'Manage your healthcare appointments'
+                }
+              </p>
             </div>
-            <Button 
-              onClick={() => setIsBookingModalOpen(true)}
-              className="flex items-center gap-2"
-              disabled={!hasValidConsultation}
-            >
-              <Plus className="w-4 h-4" />
-              Book Appointment
-            </Button>
+            {user?.role === 'student' && (
+              <Button 
+                onClick={() => setIsBookingModalOpen(true)}
+                className="flex items-center gap-2"
+                disabled={!hasValidConsultation}
+              >
+                <Plus className="w-4 h-4" />
+                Book Appointment
+              </Button>
+            )}
           </div>
 
-          {/* Consultation Requirement Notice */}
-          {!hasValidConsultation && (
+          {/* Consultation Requirement Notice - Only for Students */}
+          {user?.role === 'student' && !hasValidConsultation && (
             <div className="mb-8">
               <Card className="border-amber-200 bg-amber-50">
                 <CardContent className="pt-6">
@@ -297,32 +478,81 @@ export default function Appointments() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Upcoming Appointments */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CalendarIcon className="w-5 h-5" />
-                  Upcoming Appointments
-                </CardTitle>
+              <CardHeader 
+                className="cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => setIsUpcomingCollapsed(!isUpcomingCollapsed)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon className="w-5 h-5" />
+                    <CardTitle>Upcoming Appointments</CardTitle>
+                    <Badge variant="secondary" className="ml-2">
+                      {upcomingAppointments.length}
+                    </Badge>
+                  </div>
+                  {isUpcomingCollapsed ? (
+                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </div>
                 <CardDescription>
                   Your scheduled healthcare appointments
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {isLoading ? (
-                    <div className="text-center py-8">
-                      <p className="text-muted-foreground">Loading appointments...</p>
-                    </div>
-                  ) : upcomingAppointments.length > 0 ? (
-                    upcomingAppointments.map((appointment) => (
-                      <div key={appointment.id} className="border rounded-lg p-4">
+              {!isUpcomingCollapsed && (
+                <CardContent>
+                  <div className={`space-y-4 ${upcomingAppointments.length > 3 ? 'max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100' : ''}`}>
+                    {isLoading ? (
+                      <div className="text-center py-8">
+                        <p className="text-muted-foreground">Loading appointments...</p>
+                      </div>
+                    ) : upcomingAppointments.length > 0 ? (
+                      upcomingAppointments.map((appointment) => (
+                      <div 
+                        key={appointment.id} 
+                        className={`border rounded-lg p-4 ${
+                          user?.role === 'doctor' 
+                            ? 'cursor-pointer hover:shadow-md hover:border-primary/50 transition-all duration-200' 
+                            : ''
+                        }`}
+                        onClick={() => {
+                          if (user?.role === 'doctor') {
+                            router.push(`/appointments/${appointment.id}`);
+                          }
+                        }}
+                      >
                         <div className="flex items-start justify-between mb-2">
                           <div>
                             <h3 className="font-medium">{appointment.type}</h3>
-                            <p className="text-sm text-muted-foreground">{appointment.doctor_name || appointment.doctor}</p>
+                            {user?.role === 'doctor' ? (
+                              <div className="text-sm text-muted-foreground">
+                                <p>Patient: {appointment.patient?.name || 'Unknown'}</p>
+                                <p>ID: {appointment.patient?.student_id || appointment.patient_id}</p>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">{appointment.doctor_name || appointment.doctor}</p>
+                            )}
                           </div>
-                          <Badge className={getStatusColor(appointment.status)}>
-                            {appointment.status}
-                          </Badge>
+                          <div className="flex flex-col items-end gap-2">
+                            <Badge className={getStatusColor(appointment.status, isAppointmentPast(appointment))}>
+                              {getDisplayStatus(appointment)}
+                            </Badge>
+                            {appointment.urgency_level && (
+                              <Badge 
+                                variant="outline" 
+                                className={
+                                  appointment.urgency_level === 'high' || appointment.urgency_level === 'emergency'
+                                    ? 'bg-red-100 text-red-800 border-red-200'
+                                    : appointment.urgency_level === 'medium'
+                                    ? 'bg-orange-100 text-orange-800 border-orange-200'
+                                    : 'bg-green-100 text-green-800 border-green-200'
+                                }
+                              >
+                                {appointment.urgency_level.toUpperCase()}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <div className="flex items-center gap-1">
@@ -334,10 +564,37 @@ export default function Appointments() {
                             {appointment.time}
                           </div>
                         </div>
+                        
+                        {/* Show symptoms for doctors */}
+                        {user?.role === 'doctor' && appointment.symptoms && appointment.symptoms.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-xs text-muted-foreground mb-1">Reported Symptoms:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {appointment.symptoms.slice(0, 3).map((symptom, index) => (
+                                <span key={index} className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                                  {symptom}
+                                </span>
+                              ))}
+                              {appointment.symptoms.length > 3 && (
+                                <span className="text-xs text-muted-foreground">
+                                  +{appointment.symptoms.length - 3} more
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
                         {appointment.notes && (
                           <p className="text-sm text-muted-foreground mt-2 italic">
                             {appointment.notes}
                           </p>
+                        )}
+                        
+                        {user?.role === 'doctor' && (
+                          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center text-xs text-primary">
+                            <Stethoscope className="w-3 h-3 mr-1" />
+                            Click to view detailed patient information
+                          </div>
                         )}
                       </div>
                     ))
@@ -355,37 +612,71 @@ export default function Appointments() {
                       </Button>
                     </div>
                   )}
-                </div>
-              </CardContent>
+                  </div>
+                </CardContent>
+              )}
             </Card>
 
             {/* Past Appointments */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="w-5 h-5" />
-                  Past Appointments
-                </CardTitle>
+              <CardHeader 
+                className="cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => setIsPastCollapsed(!isPastCollapsed)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5" />
+                    <CardTitle>Past Appointments</CardTitle>
+                    <Badge variant="secondary" className="ml-2">
+                      {pastAppointments.length}
+                    </Badge>
+                  </div>
+                  {isPastCollapsed ? (
+                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </div>
                 <CardDescription>
                   Your completed appointment history
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {isLoading ? (
-                    <div className="text-center py-8">
-                      <p className="text-muted-foreground">Loading appointments...</p>
-                    </div>
-                  ) : pastAppointments.length > 0 ? (
-                    pastAppointments.map((appointment) => (
-                      <div key={appointment.id} className="border rounded-lg p-4">
+              {!isPastCollapsed && (
+                <CardContent>
+                  <div className={`space-y-4 ${pastAppointments.length > 3 ? 'max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100' : ''}`}>
+                    {isLoading ? (
+                      <div className="text-center py-8">
+                        <p className="text-muted-foreground">Loading appointments...</p>
+                      </div>
+                    ) : pastAppointments.length > 0 ? (
+                      pastAppointments.map((appointment) => (
+                      <div 
+                        key={appointment.id} 
+                        className={`border rounded-lg p-4 ${
+                          user?.role === 'doctor' 
+                            ? 'cursor-pointer hover:shadow-md hover:border-primary/50 transition-all duration-200' 
+                            : ''
+                        }`}
+                        onClick={() => {
+                          if (user?.role === 'doctor') {
+                            router.push(`/appointments/${appointment.id}`);
+                          }
+                        }}
+                      >
                         <div className="flex items-start justify-between mb-2">
                           <div>
                             <h3 className="font-medium">{appointment.type}</h3>
-                            <p className="text-sm text-muted-foreground">{appointment.doctor_name || appointment.doctor}</p>
+                            {user?.role === 'doctor' ? (
+                              <div className="text-sm text-muted-foreground">
+                                <p>Patient: {appointment.patient?.name || 'Unknown'}</p>
+                                <p>ID: {appointment.patient?.student_id || appointment.patient_id}</p>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">{appointment.doctor_name || appointment.doctor}</p>
+                            )}
                           </div>
-                          <Badge className={getStatusColor(appointment.status)}>
-                            {appointment.status}
+                          <Badge className={getStatusColor(appointment.status, isAppointmentPast(appointment))}>
+                            {getDisplayStatus(appointment)}
                           </Badge>
                         </div>
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -403,6 +694,31 @@ export default function Appointments() {
                             {appointment.notes}
                           </p>
                         )}
+                        
+                        {user?.role === 'doctor' && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center text-xs text-primary">
+                                <Stethoscope className="w-3 h-3 mr-1" />
+                                Click to view patient records
+                              </div>
+                              {appointment.status === 'completed' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCreateMedicalRecord(appointment);
+                                  }}
+                                  className="flex items-center gap-1"
+                                >
+                                  <FileText className="w-3 h-3" />
+                                  Create Medical Record
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))
                   ) : (
@@ -411,8 +727,9 @@ export default function Appointments() {
                       <p className="text-muted-foreground">No past appointments</p>
                     </div>
                   )}
-                </div>
-              </CardContent>
+                  </div>
+                </CardContent>
+              )}
             </Card>
           </div>
         </div>
@@ -505,6 +822,26 @@ export default function Appointments() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Medical Record Form */}
+      {selectedAppointment && (
+        <MedicalRecordForm
+          isOpen={isMedicalRecordFormOpen}
+          onClose={() => {
+            setIsMedicalRecordFormOpen(false);
+            setSelectedAppointment(null);
+            setConsultationData(null);
+          }}
+          appointmentId={selectedAppointment.id}
+          patientInfo={{
+            name: selectedAppointment.patient?.name || 'Unknown Patient',
+            student_id: selectedAppointment.patient?.student_id || selectedAppointment.patient_id || 'Unknown',
+            visit_date: format(new Date(selectedAppointment.date), 'PPP')
+          }}
+          consultationData={consultationData}
+          onSubmit={handleMedicalRecordSubmit}
+        />
+      )}
     </div>
   );
 }

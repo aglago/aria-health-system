@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/layout/navbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -77,128 +77,150 @@ export default function PatientDetailPage({
 }) {
   const { studentId } = use(params);
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [activeTab, setActiveTab] = useState<'overview' | 'records' | 'vitals' | 'medications'>('overview');
+  const [patientInfo, setPatientInfo] = useState<PatientInfo | null>(null);
+  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Redirect if not authenticated or not a doctor
+  // Fetch patient data and medical records
+  const fetchPatientData = async () => {
+    try {
+      // Fetch medical records for this patient
+      const recordsResponse = await fetch(`/api/medical-records?patient_id=${studentId}&limit=100`, {
+        credentials: 'include'
+      });
+
+      if (recordsResponse.ok) {
+        const recordsData = await recordsResponse.json();
+        
+        if (recordsData.records && recordsData.records.length > 0) {
+          // Convert API medical records to component format
+          const convertedRecords: MedicalRecord[] = recordsData.records.map((record: any) => ({
+            id: record._id,
+            date: new Date(record.record_date || record.visit_date),
+            type: record.record_type || 'consultation',
+            title: record.chief_complaint || 'Medical Record',
+            description: record.history_of_present_illness || record.assessment_notes || 'No description available',
+            symptoms: record.symptoms_reported_to_aria || [],
+            diagnosis: record.final_diagnosis,
+            treatment: record.treatment_plan,
+            medications: record.medications_prescribed?.map((med: any) => 
+              `${med.medication_name} ${med.dosage} ${med.frequency}`
+            ) || [],
+            doctor: record.doctor_name || record.doctor?.name || 'Unknown Doctor',
+            severity: record.severity_level || 'low',
+            status: record.status === 'signed' ? 'completed' : record.status || 'pending',
+            notes: record.doctor_notes || record.follow_up_instructions,
+            vitals: record.vital_signs ? {
+              bloodPressure: record.vital_signs.blood_pressure,
+              heartRate: record.vital_signs.heart_rate,
+              temperature: record.vital_signs.temperature,
+              weight: record.vital_signs.weight,
+              height: record.vital_signs.height
+            } : undefined
+          }));
+
+          setMedicalRecords(convertedRecords);
+
+          // Create patient info from first record
+          const firstRecord = recordsData.records[0];
+          const patient: PatientInfo = {
+            id: studentId,
+            name: firstRecord.patient?.name || 'Unknown Patient',
+            student_id: studentId,
+            dateOfBirth: firstRecord.patient?.date_of_birth || 'Unknown',
+            bloodType: firstRecord.patient?.blood_type || 'Unknown',
+            allergies: firstRecord.patient?.allergies || [],
+            emergencyContact: firstRecord.patient?.emergency_contact || {
+              name: 'Unknown',
+              relationship: 'Unknown',
+              phone: 'Unknown'
+            },
+            chronicConditions: firstRecord.patient?.chronic_conditions || [],
+            currentMedications: firstRecord.patient?.current_medications || [],
+            insuranceInfo: firstRecord.patient?.insurance_info || 'UMaT Student Health Insurance',
+            lastVisit: new Date(firstRecord.record_date || firstRecord.visit_date)
+          };
+
+          setPatientInfo(patient);
+        } else {
+          // No medical records found - create basic patient info
+          setPatientInfo({
+            id: studentId,
+            name: 'Unknown Patient',
+            student_id: studentId,
+            dateOfBirth: 'Unknown',
+            bloodType: 'Unknown',
+            allergies: [],
+            emergencyContact: {
+              name: 'Unknown',
+              relationship: 'Unknown',
+              phone: 'Unknown'
+            },
+            chronicConditions: [],
+            currentMedications: [],
+            insuranceInfo: 'UMaT Student Health Insurance',
+            lastVisit: new Date()
+          });
+          setMedicalRecords([]);
+        }
+      } else {
+        console.error('Failed to fetch medical records:', recordsResponse.status);
+        setMedicalRecords([]);
+      }
+    } catch (error) {
+      console.error('Error fetching patient data:', error);
+      setMedicalRecords([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user && user.role === 'doctor') {
+      fetchPatientData();
+    }
+  }, [user, studentId]);
+
+  // Redirect if not authenticated or not a doctor - only on client side
+  useEffect(() => {
+    if (!loading && (!user || user.role !== 'doctor')) {
+      router.push('/role-selection');
+    }
+  }, [user, loading, router]);
+
+  if (loading || isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading patient data...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!user || user.role !== 'doctor') {
-    router.push('/role-selection');
     return null;
   }
 
-  // Mock patient information
-  const patientInfo: PatientInfo = {
-    id: studentId,
-    name: studentId === 'UEB/123/24' ? 'John Smith' : 
-          studentId === 'UEC/456/24' ? 'Sarah Johnson' :
-          studentId === 'UEP/789/24' ? 'Michael Chen' :
-          studentId === 'UEB/111/24' ? 'Emma Davis' :
-          studentId === 'UEC/222/24' ? 'David Wilson' : 'Unknown Student',
-    student_id: studentId,
-    dateOfBirth: '2000-05-15',
-    bloodType: 'O+',
-    allergies: ['Penicillin', 'Shellfish', 'Pollen'],
-    emergencyContact: {
-      name: 'Jane Smith',
-      relationship: 'Mother',
-      phone: '+233 24 123 4567'
-    },
-    chronicConditions: ['Asthma', 'Hypertension'],
-    currentMedications: ['Albuterol Inhaler', 'Lisinopril 10mg'],
-    insuranceInfo: 'UMaT Student Health Insurance',
-    lastVisit: new Date('2024-01-15')
-  };
-
-  // Mock detailed medical records
-  const medicalRecords: MedicalRecord[] = [
-    {
-      id: '1',
-      date: new Date('2024-01-15'),
-      type: 'consultation',
-      title: 'Follow-up: Persistent Headaches',
-      description: 'Patient returned for follow-up on tension headaches. Reports improvement with stress management techniques.',
-      symptoms: ['Headache', 'Light sensitivity', 'Neck tension'],
-      diagnosis: 'Tension-type headaches, improving',
-      treatment: 'Continue stress management, increase water intake, ergonomic workspace setup',
-      medications: ['Ibuprofen 400mg PRN', 'Magnesium supplement'],
-      doctor: 'Dr. Smith',
-      severity: 'medium',
-      status: 'completed',
-      notes: 'Patient showing good improvement. Recommend follow-up in 2 weeks if symptoms persist.',
-      vitals: {
-        bloodPressure: '120/80',
-        heartRate: 72,
-        temperature: 36.5,
-        weight: 70,
-        height: 175
-      }
-    },
-    {
-      id: '2',
-      date: new Date('2024-01-10'),
-      type: 'symptom_report',
-      title: 'Initial Consultation: Severe Headaches',
-      description: 'Student presented with severe, persistent headaches lasting 3 days. Associated with dizziness and light sensitivity.',
-      symptoms: ['Severe headache', 'Dizziness', 'Photophobia', 'Nausea'],
-      diagnosis: 'Tension headaches, stress-related',
-      treatment: 'Rest, hydration, stress management techniques, ergonomic assessment',
-      medications: ['Ibuprofen 400mg TID', 'Relaxation therapy'],
-      doctor: 'Dr. Smith',
-      severity: 'high',
-      status: 'follow_up_required',
-      notes: 'Referred to stress counseling. Follow-up in 1 week to assess progress.',
-      vitals: {
-        bloodPressure: '125/85',
-        heartRate: 78,
-        temperature: 36.8
-      }
-    },
-    {
-      id: '3',
-      date: new Date('2024-01-05'),
-      type: 'appointment',
-      title: 'Annual Health Check-up',
-      description: 'Routine annual health screening and wellness assessment for student.',
-      symptoms: [],
-      diagnosis: 'Overall good health, mild stress indicators',
-      treatment: 'Continue healthy lifestyle, stress management recommendations',
-      medications: ['Multivitamin daily'],
-      doctor: 'Dr. Johnson',
-      severity: 'low',
-      status: 'completed',
-      notes: 'All vital signs normal. Recommend stress management due to academic pressure.',
-      vitals: {
-        bloodPressure: '118/75',
-        heartRate: 68,
-        temperature: 36.4,
-        weight: 69,
-        height: 175
-      }
-    },
-    {
-      id: '4',
-      date: new Date('2023-12-20'),
-      type: 'emergency',
-      title: 'Allergic Reaction - Shellfish',
-      description: 'Emergency presentation with allergic reaction after consuming shellfish at campus cafeteria.',
-      symptoms: ['Hives', 'Swelling', 'Difficulty breathing', 'Rapid pulse'],
-      diagnosis: 'Anaphylactic reaction to shellfish',
-      treatment: 'Epinephrine, antihistamines, corticosteroids, monitoring',
-      medications: ['Epinephrine 0.3mg IM', 'Diphenhydramine 50mg IV', 'Prednisone 40mg'],
-      doctor: 'Dr. Emergency',
-      severity: 'emergency',
-      status: 'completed',
-      notes: 'Patient responded well to treatment. Discharged with EpiPen prescription and dietary counseling.',
-      vitals: {
-        bloodPressure: '140/90',
-        heartRate: 110,
-        temperature: 37.2
-      }
-    }
-  ];
+  if (!patientInfo) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground">Patient not found</p>
+          <Button variant="outline" onClick={() => router.back()} className="mt-4">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {

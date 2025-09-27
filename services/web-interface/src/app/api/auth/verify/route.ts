@@ -20,14 +20,25 @@ export async function GET(request: NextRequest) {
     // Verify JWT token
     const { payload } = await jwtVerify(token, JWT_SECRET);
 
+    // Build complete user object matching the expected interface
+    const user: any = {
+      id: payload.id,
+      name: payload.name,
+      role: payload.role,
+      institution: payload.institution
+    };
+    
+    if (payload.student_id) {
+      user.student_id = payload.student_id;
+    }
+    
+    if (payload.doctor_id) {
+      user.doctor_id = payload.doctor_id;
+    }
+
     return NextResponse.json({
       success: true,
-      user: {
-        student_id: payload.student_id,
-        name: payload.name,
-        institution: payload.institution,
-        role: payload.role
-      },
+      user: user,
       authenticated: true
     });
 

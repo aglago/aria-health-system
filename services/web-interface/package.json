@@ -6,7 +6,12 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed-demo": "node scripts/seed-demo-users.js",
+    "seed-demo-data": "node scripts/seed-demo-data.js",
+    "setup-demo": "node scripts/setup-demo.js",
+    "seed-comprehensive": "node scripts/seed-comprehensive-demo.js",
+    "setup-complete-demo": "node scripts/setup-complete-demo.js"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
@@ -15,8 +20,10 @@
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-navigation-menu": "^1.2.14",
     "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-tabs": "^1.1.13",
     "@types/bcryptjs": "^2.4.6",
     "@types/mongoose": "^5.11.96",
     "bcryptjs": "^3.0.2",
@@ -24,6 +31,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "jose": "^6.0.12",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.539.0",
     "mongodb": "^6.18.0",
     "mongoose": "^8.17.1",
@@ -37,6 +45,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

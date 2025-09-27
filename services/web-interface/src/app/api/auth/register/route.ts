@@ -13,12 +13,13 @@ interface RegisterRequest {
   email?: string;
   phone?: string;
   institution?: string;
+  specialization?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: RegisterRequest = await request.json();
-    const { name, role, student_id, doctor_id, password, email, phone, institution } = body;
+    const { name, role, student_id, doctor_id, password, email, phone, institution, specialization } = body;
 
     // Validate required fields
     if (!name || !role || !password) {
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
       email,
       phone,
       institution: institution || 'University of Mines and Technology',
+      specialization,
       ...(role === 'student' && { student_id: student_id?.toUpperCase() }),
       ...(role === 'doctor' && { doctor_id })
     };

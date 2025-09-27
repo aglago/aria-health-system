@@ -38,7 +38,7 @@ interface DoctorResponse {
 }
 
 export default function DoctorChat() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [messages, setMessages] = useState<DoctorMessage[]>([
     {
       id: '1',
@@ -79,11 +79,65 @@ export default function DoctorChat() {
     }
   }, [user]);
 
-  // Redirect if not authenticated
+  // Handle authentication redirect
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/role-selection');
+    }
+  }, [user, authLoading, router]);
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Return null if not authenticated (redirect will happen in useEffect)
   if (!user) {
-    router.push('/role-selection');
     return null;
   }
+
+  // Save consultation to database when completed
+  const saveConsultationToDatabase = async (data: DoctorResponse, sessionId: string, messages: DoctorMessage[]) => {
+    try {
+      const response = await fetch('/api/consultations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          session_id: sessionId,
+          symptoms: messages.find(m => m.sender === 'user')?.content || '',
+          diagnosis: data.doctor_response,
+          recommendations: data.doctor_response,
+          urgency_level: data.urgency_level,
+          confidence: data.confidence,
+          medical_reasoning: data.medical_reasoning,
+          messages: messages.map(m => ({
+            content: m.content,
+            sender: m.sender,
+            timestamp: m.timestamp
+          }))
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Consultation saved to database:', result);
+      } else {
+        console.error('❌ Failed to save consultation:', await response.text());
+      }
+    } catch (error) {
+      console.error('❌ Error saving consultation to database:', error);
+    }
+  };
 
   const handleSendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -162,6 +216,9 @@ export default function DoctorChat() {
           sessionId: sessionId || data.session_id,
           completed: true
         }));
+        
+        // Save consultation to database
+        await saveConsultationToDatabase(data, sessionId || data.session_id, [...messages, doctorMessage]);
       }
 
       // Handle emergency situations
@@ -408,8 +465,8 @@ export default function DoctorChat() {
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
       <Navbar />
       
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto">
+      <main className="py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="mb-8">
             <div className="flex items-center gap-4 mb-4">
@@ -475,11 +532,11 @@ export default function DoctorChat() {
                     {message.urgency === 'emergency' && (
                       <AlertTriangle size={16} className="text-destructive" />
                     )}
-                    {message.confidence && (
+                    {/* {message.confidence && (
                       <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
                         {(message.confidence * 100).toFixed(0)}% confidence
                       </span>
-                    )}
+                    )} */}
                   </div>
                   
                   <div className="prose prose-sm max-w-none overflow-hidden">
@@ -487,7 +544,7 @@ export default function DoctorChat() {
                   </div>
                   
                   {/* Medical Reasoning */}
-                  {message.medical_reasoning && (
+                  {/* {message.medical_reasoning && (
                     <Card className="mt-4 bg-blue-50/50 border-blue-200 overflow-hidden">
                       <CardContent className="p-4">
                         <div className="flex items-center gap-2 mb-3">
@@ -497,10 +554,10 @@ export default function DoctorChat() {
                         <p className="text-blue-800 leading-relaxed break-words">{message.medical_reasoning}</p>
                       </CardContent>
                     </Card>
-                  )}
+                  )} */}
                   
                   {/* Follow-up Questions */}
-                  {message.follow_up_questions && message.follow_up_questions.length > 0 && (
+                  {/* {message.follow_up_questions && message.follow_up_questions.length > 0 && (
                     <Card className="mt-4 bg-amber-50/50 border-amber-200 overflow-hidden">
                       <CardContent className="p-4">
                         <h4 className="font-semibold text-amber-900 mb-3">Additional Questions to Consider:</h4>
@@ -514,7 +571,7 @@ export default function DoctorChat() {
                         </div>
                       </CardContent>
                     </Card>
-                  )}
+                  )} */}
                   
                   {/* Emergency Alert */}
                   {message.requires_immediate_care && (
@@ -670,7 +727,7 @@ export default function DoctorChat() {
           </DialogHeader>
 
           {/* Assessment Summary */}
-          {assessmentSummary && (
+          {/* {assessmentSummary && (
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle className="text-lg">Medical Assessment Summary</CardTitle>
@@ -683,7 +740,7 @@ export default function DoctorChat() {
                 </div>
               </CardContent>
             </Card>
-          )}
+          )} */}
 
           {/* Available Times */}
           <div className="space-y-4">
